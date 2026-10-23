@@ -3,6 +3,8 @@
 Base: E-UAE 0.8.29-WIP with the ReAction GUI ("e-uae-reaction").
 Items marked **[core]** touch the CPU/FPU emulation; everything else is GUI / platform.
 
+## Unreleased (after v17)
+
 - **Fix: start from the Workbench icon.** Double-clicking the E-UAE program icon (no config icon) showed the ASL requester "select config" (leftover of the original E-UAE) and quit on Cancel, so the GUI never opened. It now starts like the Shell without arguments (GUI opens, current dir = PROGDIR:). Start with a config icon (`sm_NumArgs == 2`) and Shell start with arguments are unchanged. (`od-amiga/main.c`)
 
 ---

@@ -1,0 +1,13 @@
+* text=auto
+*.sh text eol=lf
+configure text eol=lf
+configure.in text eol=lf
+*.m4 text eol=lf
+*.in text eol=lf
+*.am text eol=lf
+
+# binary files
+*.catalog binary
+*.info binary
+*.icns binary
+*.rsrc binary
