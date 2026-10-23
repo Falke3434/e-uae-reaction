@@ -12,26 +12,45 @@
 #ifndef UAE_TYPES_H
 #define UAE_TYPES_H
 
+/* Robustness: the SIZEOF_* macros come from a generated sysconfig.h, and
+ * the host tools in src/tools use their own copy. If that copy is stale or
+ * incomplete ("No 2 byte type, you lose."), the type checks below fail.
+ * GCC knows the real sizes of the compiler that is compiling this file, so
+ * use those (UAE_SZ_*) and fall back to SIZEOF_* only for other compilers. */
+#ifdef __SIZEOF_SHORT__
+# define UAE_SZ_SHORT     __SIZEOF_SHORT__
+# define UAE_SZ_INT       __SIZEOF_INT__
+# define UAE_SZ_LONG      __SIZEOF_LONG__
+# define UAE_SZ_LONG_LONG __SIZEOF_LONG_LONG__
+# define UAE_SZ_VOID_P    __SIZEOF_POINTER__
+#else
+# define UAE_SZ_SHORT     SIZEOF_SHORT
+# define UAE_SZ_INT       SIZEOF_INT
+# define UAE_SZ_LONG      SIZEOF_LONG
+# define UAE_SZ_LONG_LONG SIZEOF_LONG_LONG
+# define UAE_SZ_VOID_P    SIZEOF_VOID_P
+#endif
+
 /* If char has more then 8 bits, good night. */
 typedef unsigned char  uae_u8;
 typedef signed char    uae_s8;
 
 //typedef struct { uae_u8 RGB[3]; } RGB;
 
-#if SIZEOF_SHORT == 2
+#if UAE_SZ_SHORT == 2
 typedef unsigned short uae_u16;
 typedef short          uae_s16;
-#elif SIZEOF_INT == 2
+#elif UAE_SZ_INT == 2
 typedef unsigned int   uae_u16;
 typedef int            uae_s16;
 #else
 # error No 2 byte type, you lose.
 #endif
 
-#if SIZEOF_INT == 4
+#if UAE_SZ_INT == 4
 typedef unsigned int   uae_u32;
 typedef int            uae_s32;
-#elif SIZEOF_LONG == 4
+#elif UAE_SZ_LONG == 4
 typedef unsigned long  uae_u32;
 typedef long           uae_s32;
 #else
@@ -43,7 +62,7 @@ typedef uae_u32        uaecptr;
 #undef uae_s64
 #undef uae_u64
 
-#if SIZEOF_LONG_LONG == 8
+#if UAE_SZ_LONG_LONG == 8
 # define uae_s64   long long
 # define uae_u64   unsigned long long
 # define VAL64(a)  (a ## LL)
@@ -53,17 +72,17 @@ typedef uae_u32        uaecptr;
 # define uae_u64   unsigned __int64
 # define VAL64(a)  (a)
 # define UVAL64(a) (a)
-#elif SIZEOF_LONG == 8
+#elif UAE_SZ_LONG == 8
 # define uae_s64   long;
 # define uae_u64   unsigned long;
 # define VAL64(a)  (a ## l)
 # define UVAL64(a) (a ## ul)
 #endif
 
-#if   SIZEOF_VOID_P == 8
+#if   UAE_SZ_VOID_P == 8
 typedef long int          uae_intptr;
 typedef unsigned long int uae_uintptr;
-#elif SIZEOF_VOID_P == 4
+#elif UAE_SZ_VOID_P == 4
 typedef int               uae_intptr;
 typedef unsigned int      uae_uintptr;
 #else

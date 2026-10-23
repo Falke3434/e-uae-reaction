@@ -301,6 +301,8 @@ extern void dump_counts (void);
 extern int m68k_move2c (int, uae_u32 *);
 extern int m68k_movec2 (int, uae_u32 *);
 extern void m68k_divl (uae_u32, uae_u32, uae_u16, uaecptr);
+extern void m68k_chk_flags (struct regstruct *, uae_s32 src, uae_s32 dst, int is_word);
+extern void m68k_chk2_flags (struct regstruct *, uae_s32 lower, uae_s32 upper, uae_s32 val);
 extern void m68k_mull (uae_u32, uae_u32, uae_u16);
 extern void init_m68k (void);
 extern void init_m68k_full (void);
@@ -373,9 +375,11 @@ extern uae_u32 start_pc;
 void newcpu_showstate (void);
 
 #ifdef JIT
-extern void flush_icache (int n);
+extern void flush_icache (int n);		/* CPU cache flush: soft or hard (comp_flushmode) */
+extern void flush_icache_hard (const char *callsrc);	/* always discards all translated code */
 extern void compemu_reset (void);
 extern void compemu_cleanup (void);
 #else
 #define flush_icache(X) do {} while (0)
+#define flush_icache_hard(X) do {} while (0)
 #endif

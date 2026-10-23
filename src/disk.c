@@ -1821,15 +1821,21 @@ void DISK_ersatz_read (int tr, int sec, uaecptr dest)
 
 /* type: 0=regular, 1=ext2adf */
 /* adftype: 0=DD,1=HD,2=525SD */
-void disk_creatediskfile (char *name, int type, drive_type adftype, const char *disk_name)
+/* Returns 1 on success, 0 if the file could not be written. */
+int disk_creatediskfile (char *name, int type, drive_type adftype, const char *disk_name)
 {
     struct zfile *f;
-    int i, l, file_size, tracks, track_len;
+    int i, l, file_size, tracks, track_len, chunk_size, ok = 0;
     uae_u8 *chunk = NULL;
     uae_u8 tmp[3*4];
+    size_t name_len;
 
     if (disk_name == NULL || strlen (disk_name) == 0)
 	disk_name = "empty";
+    /* AmigaDOS volume names are BCPL strings of at most 30 characters */
+    name_len = strlen (disk_name);
+    if (name_len > 30)
+	name_len = 30;
 
     if (type == 1)
 	tracks = 2 * 83;
@@ -1845,10 +1851,16 @@ void disk_creatediskfile (char *name, int type, drive_type adftype, const char *
 	tracks /= 2;
     }
 
+    /* One chunk must hold a full DD cylinder (11264 bytes) for the regular
+       ADF and a full raw track for the extended ADF (HD: 2 * 12668 bytes,
+       which did not fit into the former fixed 16 KB buffer). */
+    chunk_size = track_len > 16384 ? track_len : 16384;
+
     f = zfile_fopen (name, "wb");
-    chunk = xmalloc (16384);
+    chunk = xmalloc (chunk_size);
     if (f && chunk) {
-	memset (chunk,0,16384);
+	ok = 1;
+	memset (chunk, 0, chunk_size);
 	if (type == 0 && adftype < 2) {
 	    for (i = 0; i < file_size; i += 11264) {
 		memset (chunk, 0, 11264);
@@ -1862,8 +1874,8 @@ void disk_creatediskfile (char *name, int type, drive_type adftype, const char *
 		    chunk[12+3] = 0x48;
 		    chunk[312] = chunk[313] = chunk[314] = chunk[315] = (uae_u8)0xff;
 		    chunk[316+2] = (block + 1) >> 8; chunk[316+3] = (block + 1) & 255;
-		    chunk[432] = strlen (disk_name);
-		    strcpy ((char *)chunk + 433, disk_name);
+		    chunk[432] = (uae_u8) name_len;
+		    memcpy ((char *)chunk + 433, disk_name, name_len);
 		    chunk[508 + 3] = 1;
 		    disk_date (chunk + 420);
 		    memcpy (chunk + 472, chunk + 420, 3 * 4);
@@ -1878,7 +1890,8 @@ void disk_creatediskfile (char *name, int type, drive_type adftype, const char *
 		    disk_checksum (chunk + 512, chunk + 512);
 
 		}
-		zfile_fwrite (chunk, 11264, 1, f);
+		if (zfile_fwrite (chunk, 11264, 1, f) != 1)
+		    ok = 0;
 	    }
 	} else {
 	    l = track_len;
@@ -1891,11 +1904,16 @@ void disk_creatediskfile (char *name, int type, drive_type adftype, const char *
 	    tmp[4] = 0; tmp[5] = 0; tmp[6]=(uae_u8)(l >> 8); tmp[7] = (uae_u8)l;
 	    tmp[8] = 0; tmp[9] = 0; tmp[10] = 0; tmp[11] = 0;
 	    for (i = 0; i < tracks; i++) zfile_fwrite (tmp, sizeof (tmp), 1, f);
-	    for (i = 0; i < tracks; i++) zfile_fwrite (chunk, l, 1, f);
+	    for (i = 0; i < tracks; i++)
+		if (zfile_fwrite (chunk, l, 1, f) != 1)
+		    ok = 0;
 	}
     }
     free (chunk);
     zfile_fclose (f);
+    if (!ok)
+	write_log ("disk_creatediskfile: could not write '%s'\n", name);
+    return ok;
 }
 
 int disk_getwriteprotect (const char *name)

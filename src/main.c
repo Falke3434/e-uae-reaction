@@ -67,6 +67,20 @@ static int restart_program;
 static char restart_config[256];
 static char optionsfile[256];
 
+/*
+ * Vom Benutzer gewaehlte Konfigurationsdatei (GUI "Load...").
+ * restart_config[] diente bisher nur als Merker "Konfiguration neu lesen";
+ * gelesen wurde danach immer die Standarddatei - die gewaehlte Datei wurde
+ * ignoriert. Jetzt:
+ *   - Emulation laeuft/pausiert: uae_restart() merkt sich die Datei,
+ *     parse_cmdline_and_init_file() laedt beim Neustart genau diese.
+ *   - Emulation gestoppt (GUI im Wartezustand): es gibt keinen
+ *     Zustandswechsel, der die Warteschleife verlaesst; die Datei wird dort
+ *     direkt geladen (pending_config[]).
+ */
+static int  restart_explicit;
+static char pending_config[256];
+
 int cloanto_rom = 0;
 
 int log_scsi;
@@ -140,7 +154,7 @@ static void fix_options (void)
 	err = 1;
     }
     if ((currprefs.gfxmem_size & (currprefs.gfxmem_size - 1)) != 0
-	|| (currprefs.gfxmem_size != 0 && (currprefs.gfxmem_size < 0x100000 || currprefs.gfxmem_size > 0x2000000)))
+	|| (currprefs.gfxmem_size != 0 && (currprefs.gfxmem_size < 0x100000 || currprefs.gfxmem_size > 0x8000000)))
     {
 	write_log ("Unsupported graphics card memory size %lx!\n", currprefs.gfxmem_size);
 	currprefs.gfxmem_size = 0;
@@ -235,6 +249,21 @@ static void fix_options (void)
 	write_log ("Bad value for cachesize parameter: value must be within 0..16384\n");
 	currprefs.cachesize = 0;
 	err = 1;
+    }
+    /* JIT and cycle-exact exclude each other (as in WinUAE): the JIT loop
+     * (m68k_run_2a) ignores the cycle-exact CPU core, but cpu_cycle_exact
+     * would still switch the chipset to exact interrupt / chip RAM timing.
+     * Cycle-exact is the explicit accuracy request, so the JIT is turned off. */
+    if (currprefs.cachesize && currprefs.cpu_cycle_exact) {
+	write_log ("JIT compiler and cycle-exact CPU can't be used together. Turning off the JIT compiler.\n");
+	currprefs.cachesize = 0;
+	/* check_prefs_changed_comp() runs every frame and would allocate the
+	   cache again from changed_prefs */
+	changed_prefs.cachesize = 0;
+	err = 1;
+    }
+    if (currprefs.cachesize && currprefs.cpu_level >= 2 && currprefs.cpu_compatible) {
+	write_log ("Note: compatible CPU mode has no effect while the JIT compiler is active.\n");
     }
 #endif
     if (currprefs.cpu_level < 2 && currprefs.z3fastmem_size > 0) {
@@ -424,6 +453,22 @@ static void parse_cmdline_and_init_file (int argc, char **argv)
 
     strcat (optionsfile, OPTIONSFILENAME);
 
+    if (restart_explicit) {
+	restart_explicit = 0;
+	if (cfgfile_load (&currprefs, restart_config, 0)) {
+	    write_log ("Loaded config file '%s'\n", restart_config);
+	    /* "Save" schreibt weiterhin in die Standarddatei (optionsfile). */
+	    fix_options ();
+	    return;
+	}
+	write_log ("Failed to load config file '%s' - using '%s'\n",
+		   restart_config, optionsfile);
+#ifdef FILESYS
+	free_mountinfo (currprefs.mountinfo);
+#endif
+	default_prefs (&currprefs, 0);
+    }
+
     if (! cfgfile_load (&currprefs, optionsfile, 0)) {
 //	write_log ("failed to load config '%s'\n", optionsfile);
 #ifdef OPTIONS_IN_HOME
@@ -454,24 +499,28 @@ void uae_save_config (void)
     FILE *f;
     char tmp[257];
 
-    /* Back up the old file.  */
+    /* Back up the old file. v17: AmigaDOS rename() fails when the target
+     * exists, so the backup was only made the first time - remove the old
+     * backup first. */
     strcpy (tmp, optionsfile);
     strcat (tmp, "~");
     write_log ("Backing-up config file '%s' to '%s'\n", optionsfile, tmp);
+    remove (tmp);
     rename (optionsfile, tmp);
 
     write_log ("Writing new config file '%s'\n", optionsfile);
     f = fopen (optionsfile, "w");
     if (f == NULL) {
-	gui_message ("Error saving configuration file.!\n"); // FIXME - better error msg.
+	rename (tmp, optionsfile);           /* v17: keep the old file */
+	gui_message ("Error saving configuration file '%s'.\n", optionsfile);
 	return;
     }
 
-    // FIXME  - either fix this nonsense, or only allow config to be saved when emulator is stopped.
-    if (uae_get_state () == UAE_STATE_STOPPED)
-	save_options (f, &changed_prefs, 0);
-    else
-	save_options (f, &currprefs, 0);
+    /* v17: always the values of the GUI (changed_prefs). While the
+     * emulation ran, currprefs was saved, so changes made in the GUI for
+     * the next start were missing in the file. "Save as" already used
+     * changed_prefs. */
+    save_options (f, &changed_prefs, 0);
 
     fclose (f);
 }
@@ -548,13 +597,53 @@ void uae_reset (int hard_reset)
 }
 
 /* This needs to be rethought */
+/*
+ * Konfiguration laden, waehrend die Emulation gestoppt ist und die GUI
+ * wartet (siehe real_main()). Wie beim Neustart: alles auf Vorgabe, dann
+ * die Datei lesen.
+ */
+static void load_pending_config (void)
+{
+    char file[256];
+
+    strcpy (file, pending_config);
+    pending_config[0] = 0;
+
+#ifdef FILESYS
+    free_mountinfo (currprefs.mountinfo);
+#endif
+    default_prefs (&currprefs, 0);
+    if (cfgfile_load (&currprefs, file, 0)) {
+	write_log ("Loaded config file '%s'\n", file);
+    } else {
+	write_log ("Failed to load config file '%s' - reloading '%s'\n", file, optionsfile);
+#ifdef FILESYS
+	free_mountinfo (currprefs.mountinfo);
+#endif
+	default_prefs (&currprefs, 0);
+	cfgfile_load (&currprefs, optionsfile, 0);
+    }
+    fix_options ();
+    changed_prefs = currprefs;
+    gui_open ();               /* neue Werte in alle Gadgets */
+}
+
 void uae_restart (int opengui, char *cfgfile)
 {
+    if (cfgfile && uae_state == UAE_STATE_STOPPED && uae_target_state == UAE_STATE_STOPPED) {
+	strncpy (pending_config, cfgfile, sizeof pending_config - 1);
+	pending_config[sizeof pending_config - 1] = 0;
+	return;
+    }
     uae_stop ();
     restart_program = opengui > 0 ? 1 : (opengui == 0 ? 2 : 3);
     restart_config[0] = 0;
-    if (cfgfile)
-	strcpy (restart_config, cfgfile);
+    restart_explicit = 0;
+    if (cfgfile) {
+	strncpy (restart_config, cfgfile, sizeof restart_config - 1);
+	restart_config[sizeof restart_config - 1] = 0;
+	restart_explicit = 1;
+    }
 }
 
 
@@ -580,6 +669,9 @@ static int do_preinit_machine (int argc, char **argv)
 #ifdef FILESYS
     rtarea_init ();
     hardfile_install ();
+#ifdef PICASSO96
+    uaegfx_install_code ();     /* built-in uaegfx.card (picasso96.c) */
+#endif
 #endif
 
     if (restart_config[0])
@@ -781,7 +873,12 @@ static void do_exit_machine (void)
 #ifdef CD32
     akiko_free ();
 #endif
-    gui_exit ();
+#ifdef BSDSOCKET
+    /* v17: end the bsdsocket proxies (Roadshow bases, sockets) at Stop */
+    bsdlib_reset ();
+#endif
+    /* v17: the GUI window stays open after Stop (position, page and list
+     * selection are kept); gui_exit() runs once at the end of real_main() */
 
 #ifdef AUTOCONFIG
     expansion_cleanup ();
@@ -841,6 +938,8 @@ void real_main (int argc, char **argv)
 	    if (err >= 0) {
 		do {
 		    gui_handle_events ();
+		    if (pending_config[0])
+			load_pending_config ();
 
 		    uae_msleep (10);
 
@@ -939,6 +1038,11 @@ void real_main (int argc, char **argv)
 	 */
 	restart_program = 3;
     }
+    /* Beenden aus dem Wartebildschirm (GUI offen, Emulation nie gestartet):
+     * do_exit_machine() und damit gui_exit() wurde nicht durchlaufen, das
+     * ReAction-Fenster blieb als Leiche stehen und "uae" endete mit
+     * nicht freigegebenen Signalen. gui_exit() ist mehrfach aufrufbar. */
+    gui_exit ();
     zfile_exit ();
 }
 

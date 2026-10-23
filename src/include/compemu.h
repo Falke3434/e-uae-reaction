@@ -14,6 +14,11 @@
  */
 #define MAX_CHECKSUM_LEN 2048
 
+/* Size of the longest possible 68k instruction in bytes (68020+: opcode plus
+ * two full format extensions = 11 words). Added to the start of the last
+ * instruction of a block, so the checksum covers its extension words too. */
+#define LONGEST_68K_INST 24
+
 /* Number of prepared blockinfo for a compiled block */
 #define MAX_HOLD_BI 3  /* One for the current block, and up to two
 			  for jump targets */

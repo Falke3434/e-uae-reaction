@@ -20,6 +20,7 @@
 #include "autoconf.h"
 #include "savestate.h"
 #include "ar.h"
+#include "gayle.h"
 #include "crc32.h"
 
 #ifdef USE_MAPPED_MEMORY
@@ -36,7 +37,7 @@ int special_mem;
 int ersatzkickfile;
 
 #ifdef CD32
-extern int cd32_enabled;
+#include "akiko.h"
 #endif
 #ifdef CDTV
 extern int cdtv_enabled;
@@ -773,6 +774,12 @@ static uae_u32 extendedkickmem_start;
 #define EXTENDED_ROM_CD32 1
 #define EXTENDED_ROM_CDTV 2
 
+/* v17: for the CD32 delay loop patch in akiko.c */
+int extendedkickmem_size_get (void)
+{
+    return extendedkickmemory ? (int) extendedkickmem_size : 0;
+}
+
 #if defined CDTV || defined CD32
 
 static int extromtype (void)
@@ -1101,6 +1108,13 @@ static int load_extendedkickstart (void)
     struct zfile *f;
     int size;
 
+    /* v17: a new ROM replaces the one of the last start / reset */
+    if (extendedkickmemory)
+	mapped_free (extendedkickmemory);
+    extendedkickmemory = 0;
+    extendedkickmem_bank.baseaddr = 0;
+    extendedkickmem_size = 0;
+
     if (strlen(currprefs.romextfile) == 0)
 	return 0;
     f = zfile_fopen (currprefs.romextfile, "rb");
@@ -1110,7 +1124,9 @@ static int load_extendedkickstart (void)
     }
     zfile_fseek (f, 0, SEEK_END);
     size = zfile_ftell (f);
-    if (size > 300000)
+    /* 512 KB = CD32 extended ROM (0xE00000), 256 KB = CDTV (0xF00000);
+     * a CD32 (Akiko CD) always has the 512 KB one */
+    if (size > 300000 || currprefs.cs_cd32cd)
 	extendedkickmem_size = 524288;
     else
 	extendedkickmem_size = 262144;
@@ -1155,6 +1171,56 @@ static void kickstart_fix_checksum (uae_u8 *mem, int size)
     mem[ch++] = cksum >> 0;
 }
 
+#ifdef CD32
+/*
+ * v17: 1 MB CD32 ROM (391640-03, Kickstart + extended ROM in one file, as
+ * in WinUAE): the Kickstart is the upper 512 KB, the extended ROM the
+ * lower 512 KB - or the other way round, then the lower half starts with
+ * the Kickstart's $1114 id. Closes f.
+ */
+static int load_cd32_combined_rom (struct zfile *f)
+{
+    uae_u8 *buf = malloc (2 * 524288);
+    uae_u8 *ks, *ext;
+
+    if (!buf) {
+	zfile_fclose (f);
+	return 0;
+    }
+    zfile_fseek (f, 0, SEEK_SET);
+    if (zfile_fread (buf, 1, 2 * 524288, f) != 2 * 524288) {
+	zfile_fclose (f);
+	free (buf);
+	gui_message ("Error while reading Kickstart.\n");
+	return 0;
+    }
+    zfile_fclose (f);
+    ks = buf + 524288;
+    ext = buf;
+    if (buf[0] == 0x11 && buf[1] == 0x14 && !(ks[0] == 0x11 && ks[1] == 0x14)) {
+	ks = buf;
+	ext = buf + 524288;
+    }
+    memcpy (kickmemory, ks, 524288);
+    if (!extendedkickmemory) {
+	/* no separate extended ROM file: use the one in this file */
+	extendedkickmem_size = 524288;
+	extendedkickmemory = (uae_u8 *) mapped_malloc (extendedkickmem_size, "rom_e0");
+	if (extendedkickmemory) {
+	    memcpy (extendedkickmemory, ext, 524288);
+	    extendedkickmem_bank.baseaddr = extendedkickmemory;
+	    extendedkickmem_mask = extendedkickmem_size - 1;
+	} else
+	    extendedkickmem_size = 0;
+    }
+    free (buf);
+    write_log ("CD32: 1 MB ROM, Kickstart in the %s half\n", ks == buf ? "lower" : "upper");
+    if (!kickstart_checksum (kickmemory, 524288))
+	return 0;
+    return 524288;
+}
+#endif
+
 static int load_kickstart (void)
 {
     struct zfile *f = zfile_fopen (currprefs.romfile, "rb");
@@ -1177,7 +1243,18 @@ static int load_kickstart (void)
     }
 
     if (f != NULL) {
-	int size = read_kickstart (f, kickmemory, 0x80000, 1, &cloanto_rom);
+	int size;
+#ifdef CD32
+	long filesize;
+	zfile_fseek (f, 0, SEEK_END);
+	filesize = zfile_ftell (f);
+	zfile_fseek (f, 0, SEEK_SET);
+	if (filesize == 2 * 524288) {
+	    cloanto_rom = 0;
+	    size = load_cd32_combined_rom (f);
+	} else
+#endif
+	size = read_kickstart (f, kickmemory, 0x80000, 1, &cloanto_rom);
 	if (size == 0)
 	    return 0;
 	kickmem_mask = size - 1;
@@ -1368,6 +1445,13 @@ void memory_reset (void)
     /* Map CIAs at 0xA00000 - 0xBFFFFF */
     map_banks (&cia_bank, 0xA0, 32, 0);
 
+#ifdef CD32
+    /* v17: CD32 Akiko chip at 0xB80000 - 0xB8FFFF */
+    cd32_enabled = currprefs.cs_cd32cd || currprefs.cs_cd32c2p || currprefs.cs_cd32nvram;
+    if (cd32_enabled)
+	map_banks (&akiko_bank, AKIKO_BASE >> 16, 1, 0);
+#endif
+
     /* Map "nothing" from top of ZorroII memory to 0x9FFFFF.
      *
      * This should be redundant because the entire memory map
@@ -1394,6 +1478,11 @@ void memory_reset (void)
 #ifdef A3000MBRES
     map_banks (&mbres_bank, 0xDE, 1, 0);
 #endif
+
+    /* Gayle (A600/A1200) or A4000 IDE controller. Must come after the
+     * custom, clock and mbres banks, it overrides parts of them. */
+    gayle_reset ();
+    gayle_map_banks ();
 
 #ifdef AUTOCONFIG
     /* 32-bit memory on A3000 motherboard. */
@@ -1425,10 +1514,6 @@ void memory_reset (void)
 #ifdef CDTV
     cdtv_enabled = 0;
 #endif
-#ifdef CD32
-    cd32_enabled = 0;
-#endif
-
 #if defined CDTV || CD32
     switch (extromtype ()) {
 
@@ -1441,7 +1526,6 @@ void memory_reset (void)
 #ifdef CD32
     case EXTENDED_ROM_CD32:
 	map_banks (&extendedkickmem_bank, 0xE0, 8, 0);
-	cd32_enabled = 1;
 	break;
 #endif
     default:
@@ -1451,6 +1535,19 @@ void memory_reset (void)
 	if (cloanto_rom && !currprefs.maprom)
 	    map_banks (&kickmem_bank, 0xE0, 8, 0);
     }
+
+#ifdef CD32
+    /* v17: on the CD32 the Kickstart is mirrored at 0xA80000 and the
+     * extended ROM at 0xB00000 (WinUAE cs_ksmirror_a8); the CD32 ROM reads
+     * there at boot. 0xB80000 (Akiko) stays as it is. */
+    if (currprefs.cs_cd32cd) {
+	map_banks (&kickmem_bank, 0xA8, 8, 0);
+	if (extendedkickmemory && extromtype () == EXTENDED_ROM_CD32)
+	    map_banks (&extendedkickmem_bank, 0xB0, 8, 0);
+	else
+	    map_banks (&kickmem_bank, 0xB0, 8, 0);
+    }
+#endif
 
 #ifdef ACTION_REPLAY
     action_replay_memory_reset();
@@ -1513,6 +1610,12 @@ void memory_cleanup (void)
 	mapped_free (bogomemory);
     if (kickmemory)
 	mapped_free (kickmemory);
+#if defined CDTV || defined CD32
+    if (extendedkickmemory)
+	mapped_free (extendedkickmemory);
+    extendedkickmemory = 0;
+    extendedkickmem_size = 0;
+#endif
     if (a1000_bootrom)
 	free (a1000_bootrom);
     if (chipmemory)
@@ -1544,7 +1647,9 @@ void map_banks (addrbank *bank, int start, int size, int realsize)
     addrbank *orgbank = bank;
     uae_u32 realstart = start;
 
-    flush_icache (1);		/* Sure don't want to keep any old mappings around! */
+    /* Sure don't want to keep any old mappings around! The translated JIT
+       code contains 68k addresses, a soft flush (checksums) is not enough. */
+    flush_icache_hard ("map_banks");
 
     if (!realsize)
 	realsize = size << 16;

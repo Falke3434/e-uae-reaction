@@ -20,6 +20,7 @@
 #include "fsusage.h"
 #include "scsidev.h"
 #include "fsdb.h"
+#include "filesys_cdfs.h"   /* v16: built-in CD file system */
 
 /* The on-disk format is as follows:
  * Offset 0, 1 byte, valid

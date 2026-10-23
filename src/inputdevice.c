@@ -1424,10 +1424,6 @@ static int ismouse (int ei)
     return 0;
 }
 
-#ifdef CD32
-extern int cd32_enabled;
-#endif
-
 static void scanevents (struct uae_prefs *p)
 {
     unsigned int i;
@@ -1566,7 +1562,9 @@ static void compatibility_mode (struct uae_prefs *prefs)
 	joysticks[joy].eventid[ID_BUTTON_OFFSET + 1][0] = INPUTEVENT_JOY2_2ND_BUTTON;
 	joysticks[joy].eventid[ID_BUTTON_OFFSET + 2][0] = INPUTEVENT_JOY2_3RD_BUTTON;
 #ifdef CD32
-	if (cd32_enabled)
+	/* v17: port 2 is a CD32 pad on a CD32 (from the prefs: Akiko is
+	 * only set up by the next reset, cd32_enabled may be stale here) */
+	if (prefs->cs_cd32cd)
 	    setcd32 (joy, 1);
 #endif
 	joysticks[joy].enabled = 1;
@@ -1602,7 +1600,9 @@ static void compatibility_mode (struct uae_prefs *prefs)
 	joysticks[joy].eventid[ID_BUTTON_OFFSET + 1][0] = INPUTEVENT_JOY2_2ND_BUTTON;
 	joysticks[joy].eventid[ID_BUTTON_OFFSET + 2][0] = INPUTEVENT_JOY2_3RD_BUTTON;
 #ifdef CD32
-	if (cd32_enabled)
+	/* v17: port 2 is a CD32 pad on a CD32 (from the prefs: Akiko is
+	 * only set up by the next reset, cd32_enabled may be stale here) */
+	if (prefs->cs_cd32cd)
 	    setcd32 (joy, 1);
 #endif
 	joysticks[joy].enabled = 1;
@@ -1661,7 +1661,7 @@ void inputdevice_updateconfig (struct uae_prefs *prefs)
     scanevents (prefs);
 
 #ifdef CD32
-    if (currprefs.input_selected_setting == 0 && cd32_enabled)
+    if (prefs->input_selected_setting == 0 && prefs->cs_cd32cd)
 	cd32_pad_enabled[1] = 1;
 #endif
 

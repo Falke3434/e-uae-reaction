@@ -44,12 +44,20 @@
 #include "zfile.h"
 #include "gui.h"
 #include "savestate.h"
+#include "picasso96.h"
 
 #ifdef TARGET_AMIGAOS
 # include <dos/dos.h>
 # include <proto/dos.h>
 # include <dos/obsolete.h>
 #endif
+#ifdef SCSIEMU
+# include "cdimage.h"
+#endif
+
+/* v16: built-in CD file system - must come after all system headers, it
+ * redirects the POSIX file calls of this file (see filesys_cdfs.h) */
+#include "filesys_cdfs.h"
 
 #define TRACING_ENABLED 0
 #if TRACING_ENABLED
@@ -1888,7 +1896,7 @@ action_dup_lock (Unit *unit, dpacket packet)
 }
 
 
-#if !defined TARGET_AMIGAOS || !defined WORDS_BIGENDIAN
+#if !defined TARGET_AMIGAOS || !defined WORDS_BIGENDIAN || !defined UAE_NATIVE_FS
 /*
  * The difference between the start of the Unix epoch and the start
  * of the Amiga epoch
@@ -2108,7 +2116,7 @@ get_fileinfo (Unit *unit, dpacket packet, uaecptr info, a_inode *aino)
 
     put_long (info + 116, aino->amigaos_mode);
 
-#if defined TARGET_AMIGAOS && defined WORDS_BIGENDIAN
+#if defined TARGET_AMIGAOS && defined WORDS_BIGENDIAN && defined UAE_NATIVE_FS
      {
 	 BPTR lock;
 	struct FileInfoBlock fib __attribute__((aligned(4)));
@@ -2516,7 +2524,7 @@ action_find_write (Unit *unit, dpacket packet)
 /* change file/dir's parent dir modification time */
 static void updatedirtime (a_inode *a1, int now)
 {
-#if !defined TARGET_AMIGAOS || !defined WORDS_BIGENDIAN
+#if !defined TARGET_AMIGAOS || !defined WORDS_BIGENDIAN || !defined UAE_NATIVE_FS
     struct stat statbuf;
     struct utimbuf ut;
     long days, mins, ticks;
@@ -3206,7 +3214,7 @@ action_set_date (Unit *unit, dpacket packet)
     }
 
     a = find_aino (unit, lock, bstr (unit, name), &err);
-#if defined TARGET_AMIGAOS && defined WORDS_BIGENDIAN
+#if defined TARGET_AMIGAOS && defined WORDS_BIGENDIAN && defined UAE_NATIVE_FS
     if (err == 0 && SetFileDate (a->nname, (struct DateStamp *) get_real_address(date)) == DOSFALSE)
 	err = IoErr ();
 #else
@@ -3703,6 +3711,25 @@ void filesys_start_threads (void)
 
     free_mountinfo (&current_mountinfo);
     dup_mountinfo (&options_mountinfo, &current_mountinfo);
+
+    /* v16: the CD-ROM image drive as bootable read-only unit CD0: (only in
+     * current_mountinfo, so it never ends up in a saved configuration) */
+    if (cdfs_wanted ()) {
+	char vol[40];
+	const char *err;
+#ifdef SCSIEMU
+	cdimage_start ();
+#endif
+	cdfs_volume_name (vol, sizeof vol);
+	err = add_filesys_unit (&current_mountinfo, CDFS_DEVNAME, vol, CDFS_ROOT, 1,
+				0, 0, 0, 0, currprefs.cd_bootpri, 0, 0);
+	if (err)
+	    write_log ("FS: CD file system not mounted: %s\n", err);
+	else
+	    write_log ("FS: CD-ROM drive mounted as %s: (volume %s, boot priority %d)\n",
+		       CDFS_DEVNAME, vol, currprefs.cd_bootpri);
+    }
+
     uip = current_mountinfo.ui;
     for (i = 0; i < current_mountinfo.num_units; i++) {
 	UnitInfo *ui = &uip[i];
@@ -3829,6 +3856,10 @@ static uae_u32 REGPARAM2 filesys_diagentry (TrapContext *context)
      * diag entry. */
 
     resaddr = scsidev_startup(resaddr);
+#ifdef PICASSO96
+    /* built-in uaegfx.card (only with graphics card memory) */
+    resaddr = uaegfx_add_resident (resaddr);
+#endif
 
     /* scan for Residents and return pointer to array of them */
     residents = resaddr;

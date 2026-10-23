@@ -14,5 +14,6 @@ void scsidev_exit (void);
 void scsidev_reset (void);
 void scsidev_start_threads (void);
 void scsi_do_disk_change (int device_id, int insert);
+int scsidev_enabled (void);
 
 extern int log_scsi;

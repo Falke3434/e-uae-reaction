@@ -22,13 +22,18 @@
 #define  __USE_BASETYPE__
 #include <proto/exec.h>
 #include <proto/dos.h>
-#include <proto/mpega.h>
+#if defined(HAVE_PROTO_MPEGA_H) && defined(HAVE_LIBRARIES_MPEGA_H)
+# define UAE_HAVE_MPEGA 1
+# include <proto/mpega.h>
+#endif
 #include <proto/asl.h>
 
 #include "custom.h"
+#include "include/memory.h"
 #include "newcpu.h"
 #include "autoconf.h"
 #include "traps.h"
+#include "gui.h"
 
 #include "win32_handle_emu.h"
 #include "win32_thread_emu.h"
@@ -111,7 +116,9 @@ struct IconIFace *IIcon = NULL;
 struct WorkbenchIFace *IWorkbench = NULL;
 struct SocketIFace *ISocket = NULL;
 
+#ifdef UAE_HAVE_MPEGA
 struct MpegaIFace *IMpega = NULL;
+#endif
 
 #include "../gfx-amigaos/window_icons.h"
 
@@ -195,7 +202,9 @@ static void free_libs (void)
 	libClose(gfxconvert);
 #endif
 
+#ifdef UAE_HAVE_MPEGA
 	libClose(Mpega);
+#endif
 }
 
 static BOOL init_libs (void)
@@ -280,11 +289,13 @@ static BOOL init_libs (void)
 	main_task = FindTask(NULL);
 	main_task_wakeup_sigbit = AllocSignal(-1);
 
+#ifdef UAE_HAVE_MPEGA
 	MpegaBase = OpenLibrary("mpega.library", 0);
 	if (MpegaBase)
 	{
-		IMpega = (struct MPEGAIFace *) GetInterface(MpegaBase, "main", 1, NULL);
+		IMpega = (struct MpegaIFace *) GetInterface(MpegaBase, "main", 1, NULL);
 	}
+#endif
 
 	return TRUE;
 }
@@ -320,7 +331,7 @@ void init_remap_keyboard_AK7000( void )
 	remap_scancode[102]=100;	// Left Window to Left Alt.
 
 	remap_scancode[101]=0x67;	// Right AltGr to Right Amiga
-	remap_scancode[103]=0x64;	// Right Window to Right Alt.
+	remap_scancode[103]=0x65;	// Right Window to Right Alt (was 0x64 = Left Alt).
 
 	// high bit is used for state...
 
@@ -361,7 +372,7 @@ void init_remap_keyboard_logitech_k310( void )
 	remap_scancode[102]=100;	// Left Window to Left Alt.
 
 	remap_scancode[101]=0x67;	// Right AltGr to Right Amiga
-	remap_scancode[103]=0x64;	// Right Window to Right Alt.
+	remap_scancode[103]=0x65;	// Right Window to Right Alt (was 0x64 = Left Alt).
 
 	// high bit is used for state...
 
@@ -386,6 +397,9 @@ int main (int argc, char *argv[])
     fromWB = argc == 0;
 
     init_libs ();
+
+    /* v16: GUI settings (log output) before the first output */
+    gui_init (argc, argv);
 
 #ifdef USE_SDL
     init_sdl ();
@@ -418,45 +432,17 @@ int main (int argc, char *argv[])
 		}
 		else
 		{
-			struct FileRequester *FileRequest;
+			/* v17: Start vom Programm-Icon: kein Config-Requester mehr,
+			   das ReAction-GUI hat selbst Load/Save fuer Configs */
+			BPTR progdir = GetProgramDir ();
+			BPTR prev = progdir ? SetCurrentDir (progdir) : 0;
 
-			FileRequest = AllocAslRequest (ASL_FileRequest, NULL);
-			if (FileRequest)
-			{
-				if (AslRequestTags (FileRequest,
-					ASLFR_TitleText,  "select config",
-					ASLFR_InitialDrawer, "progdir:configs",
-					ASLFR_InitialPattern, "",
-					ASLFR_DoPatterns,   TRUE,
-					ASLFR_DoSaveMode,   FALSE,
-					ASLFR_RejectIcons,  TRUE,
-//					ASLFR_Window,  win,
-					TAG_DONE))
-				{
-					char *path_and_file;
+			newargs[0] = "euae";
+			currprefs.console_output = 2;
 
-					path_and_file = malloc( strlen(FileRequest->fr_Drawer) + strlen(FileRequest->fr_File) + 2 );
+			real_main (1, newargs);
 
-					if (path_and_file)
-					{
-						strcpy (path_and_file, FileRequest->fr_Drawer);
-						if (strlen (path_and_file) && !(path_and_file[strlen (path_and_file) - 1] == ':' || path_and_file[strlen (path_and_file) - 1] == '/')) strcat (path_and_file, "/");
-						strcat (path_and_file, FileRequest->fr_File);
-
-						newargs[0] = "euae";
-						newargs[1] = "-f";
-						newargs[2] = path_and_file;
-
-						currprefs.console_output = 2;
-
-						real_main (3, newargs);
-
-						free(path_and_file);
-					}
-				}
-
-				FreeAslRequest (FileRequest);
-			}
+			if (prev) SetCurrentDir (prev);
 		}
 	}
 	else

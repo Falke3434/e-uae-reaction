@@ -59,6 +59,9 @@
 #include "gui.h"
 #include "audio.h"
 #include "version.h"
+#ifdef CD32
+#include "akiko.h"
+#endif
 
 #ifndef _WIN32
 #define console_out printf
@@ -459,6 +462,10 @@ void restore_state (const char *filename)
 	else if (!strcmp (name, "P96 "))
 	    end = restore_p96 (chunk);
 #endif
+#ifdef CD32
+	else if (!strcmp (name, "CD32"))
+	    end = restore_akiko (chunk);
+#endif
 #ifdef ACTION_REPLAY
 	else if (!strcmp (name, "ACTR"))
 	    end = restore_action_replay (chunk);
@@ -496,6 +503,9 @@ void savestate_restore_finish (void)
     savestate_file = 0;
     savestate_state = 0;
     restore_cpu_finish ();
+#ifdef CD32
+    restore_akiko_finish ();
+#endif
 }
 
 /* 1=compressed,2=not compressed,3=ram dump,4=audio dump */
@@ -663,6 +673,13 @@ void save_state (const char *filename, const char *description)
 	free (dst);
     } while ((dst = save_rom (0, &len, 0)));
 
+#ifdef CD32
+    dst = save_akiko (&len);
+    if (dst) {
+	save_chunk (f, dst, len, "CD32", 0);
+	free (dst);
+    }
+#endif
 #ifdef ACTION_REPLAY
     dst = save_action_replay (&len, 0);
     save_chunk (f, dst, len, "ACTR", 0);

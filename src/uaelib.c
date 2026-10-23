@@ -389,6 +389,21 @@ static uae_u32 REGPARAM2 uaelib_demux (TrapContext *context)
      case 15: return emulib_Debug ();
 
 #ifdef PICASSO96
+     case 16: case 17: case 18: case 19: case 20: case 21: case 22: case 23:
+     case 24: case 25: case 26: case 27: case 28: case 29: case 30: case 31:
+     case 32: case 36: case 37: case 38: case 39: case 40:
+	/* v16: with the built-in uaegfx.card in memory the old card file is
+	 * never loaded; ignore its hooks like WinUAE does. */
+	if (uaegfx_builtin_active ()) {
+	    write_log ("uaelib: obsolete Picasso96 uaelib hook %d ignored (built-in uaegfx.card active)\n", (int) ARG0);
+	    return 0;
+	}
+	break;
+     default:
+	break;
+    }
+
+    switch (ARG0) {
      case 16: return picasso_FindCard (&context->regs);
      case 17: return picasso_FillRect (&context->regs);
      case 18: return picasso_SetSwitch (&context->regs);
@@ -414,7 +429,7 @@ static uae_u32 REGPARAM2 uaelib_demux (TrapContext *context)
      case 38: return picasso_SetSpriteImage (&context->regs);
      case 39: return picasso_SetSpriteColor (&context->regs);
 #endif
-//     case 40: return picasso_DrawLine ();
+     case 40: return picasso_BlitRectTransparent (&context->regs);
 #endif
      case 68: return emulib_Minimize ();
      case 69: return emulib_ExecuteNativeCode (&context->regs);

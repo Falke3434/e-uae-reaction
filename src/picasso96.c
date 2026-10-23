@@ -54,7 +54,12 @@ bool debug_crash = false;
 int        have_done_picasso       = 0;         /* For the JIT compiler */
 # ifdef PICASSO96
 static int picasso_is_special      = PIC_WRITE; /* ditto */
-static int picasso_is_special_read = PIC_READ;  /* ditto */
+/* v16: reads of the graphics card memory are no longer "special" for the
+ * JIT: gfxmem_bank.baseaddr points to gfxmemory (expansion.c), so translated
+ * code reads the framebuffer directly instead of calling gfxmem_*get().
+ * Writes stay special, they must go through gfxmem_*put() so that the
+ * changed lines are copied to the screen (flush_write). */
+static int picasso_is_special_read = 0;
 # endif
 #endif
 
@@ -459,6 +464,10 @@ static void AmigaListAddTail (uaecptr l, uaecptr n)
  * Functions to perform an action on the real screen
  */
 
+/* v16: deferred screen update (defined below) */
+static void mark_dirty_rect (int x, int y, int width, int height);
+static void p96_flush_dirty (void);
+
 /*
  * Fill a rectangle on the screen.  src points to the start of a line of the
  * filled rectangle in the frame buffer; it can be used as a memcpy source if
@@ -467,8 +476,6 @@ static void AmigaListAddTail (uaecptr l, uaecptr n)
 static void do_fillrect (uae_u8 *src, int x, int y, int width, int height,
 			 uae_u32 pen, int Bpp, RGBFTYPE rgbtype)
 {
-    uae_u8 *dst;
-
     P96TRACE(("P96: do_fillrect (src:%08x x:%d y:%d w:%d h:%d pen:%08x)\n",
 	       src, x, y, width, height, pen));
 
@@ -490,81 +497,9 @@ static void do_fillrect (uae_u8 *src, int x, int y, int width, int height,
 
 	P96TRACE (("P96: WARNING - do_fillrect() using fall-back routine!\n"));
 
-	DX_Invalidate (y, y + height - 1);
-
-	if (!picasso_vidinfo.extra_mem) return;
-
-	width *= picasso96_state.BytesPerPixel;
-	dst = gfx_lock_picasso ();
-
-	if (!dst) goto out;
-
-	dst += y * picasso_vidinfo.rowbytes + x * picasso_vidinfo.pixbytes;
-
-	if (picasso_vidinfo.rgbformat == picasso96_state.RGBFormat)
-	{
-		if (Bpp == 1)
-		{
-			while (height-- > 0)
-			{
-				memset (dst, pen, width);
-				dst += picasso_vidinfo.rowbytes;
-			}
-		}
-		else
-		{
-			while (height-- > 0)
-			{
-				memcpy (dst, src, width);
-				dst += picasso_vidinfo.rowbytes;
-			}
-		}
-	}
-	else
-	{
-		int psiz = GetBytesPerPixel (picasso_vidinfo.rgbformat);
-
-		if (picasso96_state.RGBFormat != RGBFB_CHUNKY)
-		{
-			gfx_unlock_picasso ();
-			return;
-		}
-
-		output_update_clut();
-
-		int i;
-		switch (psiz)
-		{
-			case 2:
-				while (height-- > 0)
-				{
-					for (i = 0; i < width; i++)				
-					{
-						*((uae_u16 *) dst + i) = picasso_vidinfo.clut[src[i]];
-					}
-		    			dst += picasso_vidinfo.rowbytes;					
-				}
-				break;
-
-			case 4:
-				while (height-- > 0)
-				{
-					for (i = 0; i < width; i++)
-					{
-						*((uae_u32 *) dst + i) = picasso_vidinfo.clut[src[i]];
-					}
-				    	dst += picasso_vidinfo.rowbytes;
-				}
-				break;
-
-			default:
-				gfx_unlock_picasso ();
-				return;
-		}
-	
-	}
-  out:
-	gfx_unlock_picasso ();
+	/* v16: copied from the framebuffer with the other changed lines at
+	 * the end of the frame (the fill is already in the framebuffer) */
+	mark_dirty_rect (x, y, width, height);
 }
 
 /*
@@ -580,7 +515,6 @@ static void do_blit (struct RenderInfo *ri, int Bpp, int srcx, int srcy,
 {
 	int xoff = picasso96_state.XOffset;
 	int yoff = picasso96_state.YOffset;
-	uae_u8 *srcp, *dstp;
 
 debug_crashed("%s:%d\n",__FUNCTION__,__LINE__);
 
@@ -621,93 +555,16 @@ debug_crashed("%s:%d\n",__FUNCTION__,__LINE__);
 	{
 		// Call OS blitting function that can do it in video memory.
 		// Should return if it was successful
+		// v16: the host bitmap is the source, so the changed lines that
+		// are only remembered so far must be in it first.
 
+		p96_flush_dirty ();
 		if (DX_Blit (srcx, srcy, dstx, dsty, width, height, opcode)) return;
 	}
 
-	// If no OS blit available, we do a copy from the P96 framebuffer in Amiga
-	// memory to the host's frame buffer.  
-
-	DX_Invalidate (dsty, dsty + height - 1);
-
-	if (!picasso_vidinfo.extra_mem) return;
-
-	dstp = gfx_lock_picasso ();
-	if (dstp == 0) goto out;
-
-	// Since the blit has already been performed in the framebuffer, we only need
-	// to blit the updated area to the screen. Therefore we use the destination
-	// coordinates for the source rectangle in the framebuffer - not the source
-	// coordinates.
-    
-	srcp = ri->Memory + (dstx + xoff) * Bpp + (dsty + yoff) * ri->BytesPerRow;
-
-	dstp += dsty * picasso_vidinfo.rowbytes + dstx * picasso_vidinfo.pixbytes;
-
-	P96TRACE (("P96: do_blit with srcp 0x%x, dstp 0x%x, dst_rowbytes %d, srcx"
-	       " %d, srcy %d, dstx %d, dsty %d, w %d, h %d, dst_pixbytes %d\n",
-	       srcp, dstp, picasso_vidinfo.rowbytes, srcx, srcy, dstx, dsty,
-	       width,height, picasso_vidinfo.pixbytes));
-	P96TRACE (("P96: gfxmem is at 0x%x\n", gfxmemory));
-
-	if (picasso_vidinfo.rgbformat == picasso96_state.RGBFormat)
-	{
-		width *= Bpp;
-
-		while (height-- > 0)
-		{
-			memcpy (dstp, srcp, width);
-			srcp += ri->BytesPerRow;
-			dstp += picasso_vidinfo.rowbytes;
-		}
-	}
-	 else
-	{
-		int psiz = GetBytesPerPixel (picasso_vidinfo.rgbformat);
-
-		if (picasso96_state.RGBFormat != RGBFB_CHUNKY)
-		{
-			gfx_unlock_picasso ();
-			DebugPrintF("Error: picasso96_state.RGBFormat: %08x\npicasso_vidinfo.rgbformat: %08x\n\n",picasso96_state.RGBFormat,picasso_vidinfo.rgbformat);
-			return;
-		}
-
-		output_update_clut();
-
-		int i;
-		switch (psiz)
-		{
-			case 2:
-
-				while (height-- > 0)
-				{
-					for (i = 0; i < width; i++)
-						*((uae_u16 *) dstp + i) = picasso_vidinfo.clut[srcp[i]];
-
-					srcp += ri->BytesPerRow;
-					dstp += picasso_vidinfo.rowbytes;
-				}
-				break;
-
-			case 4:
-
-				while (height-- > 0)
-				{
-					for (i = 0; i < width; i++)
-						*((uae_u32 *) dstp + i) = picasso_vidinfo.clut[srcp[i]];
-
-					srcp += ri->BytesPerRow;
-					dstp += picasso_vidinfo.rowbytes;
-				}
-				break;
-
-			default:
-				abort ();
-		}
-	}
-
-out:
-	gfx_unlock_picasso ();
+	// v16: no host blit - the changed area is copied from the framebuffer
+	// with the other changed lines at the end of the frame (one lock).
+	mark_dirty_rect (dstx, dsty, width, height);
 }
 
 /*
@@ -764,101 +621,219 @@ static int     currline_y;       /* row number of this line */
 
 
 /*
- * Write line from the framebuffer to the screen
+ * v16: deferred screen update.
  *
- * scrp       = Pointer to first byte in the source line to write
+ * Before, every change of the framebuffer line (CPU writes through
+ * gfxmem_*put, flush_write) locked the host bitmap, copied that one line
+ * and unlocked it again - for a window being drawn line by line that is a
+ * LockBitMap()/UnlockBitMap() pair per line. Now the changed byte range of
+ * each visible line is only remembered (dirty_lo/dirty_hi) and all changed
+ * lines are copied with a single lock once per frame (picasso_handle_vsync),
+ * or earlier when a host blit (DX_Blit) needs the host bitmap up to date.
+ * The Amiga framebuffer (gfxmemory) stays the only source of the picture,
+ * so copying late always gives the current contents.
+ */
+static uae_u16 *dirty_lo, *dirty_hi;  /* changed bytes [lo, hi) per visible line, hi == 0: clean */
+static int      dirty_alloc;          /* lines in the arrays */
+static int      dirty_first = 1, dirty_last = 0;   /* first > last: nothing changed */
+
+static void dirty_clear (void)
+{
+    int y;
+    for (y = dirty_first; y <= dirty_last && y < dirty_alloc; y++)
+	dirty_lo[y] = dirty_hi[y] = 0;
+    dirty_first = 1;
+    dirty_last = 0;
+}
+
+/* line: visible line (0 = top of the shown screen), bytes [lo, hi) of it */
+static void mark_dirty (int line, int lo, int hi)
+{
+    if (line < 0 || line >= picasso96_state.Height || hi <= lo)
+	return;
+    if (picasso96_state.Height > dirty_alloc) {
+	int n = picasso96_state.Height + 64;
+	uae_u16 *l = (uae_u16 *) calloc (n, sizeof (uae_u16));
+	uae_u16 *h = (uae_u16 *) calloc (n, sizeof (uae_u16));
+	if (!l || !h) {
+	    free (l);
+	    free (h);
+	    return;
+	}
+	if (dirty_lo && dirty_first <= dirty_last) {
+	    memcpy (l, dirty_lo, dirty_alloc * sizeof (uae_u16));
+	    memcpy (h, dirty_hi, dirty_alloc * sizeof (uae_u16));
+	}
+	free (dirty_lo);
+	free (dirty_hi);
+	dirty_lo = l;
+	dirty_hi = h;
+	dirty_alloc = n;
+    }
+    if (hi > 0xffff)
+	hi = 0xffff;
+    if (dirty_hi[line] == 0) {
+	dirty_lo[line] = lo;
+	dirty_hi[line] = hi;
+    } else {
+	if (lo < dirty_lo[line])
+	    dirty_lo[line] = lo;
+	if (hi > dirty_hi[line])
+	    dirty_hi[line] = hi;
+    }
+    if (dirty_first > dirty_last) {
+	dirty_first = dirty_last = line;
+    } else {
+	if (line < dirty_first)
+	    dirty_first = line;
+	if (line > dirty_last)
+	    dirty_last = line;
+    }
+}
+
+/* rectangle in visible pixels */
+static void mark_dirty_rect (int x, int y, int width, int height)
+{
+    int Bpp = picasso96_state.BytesPerPixel;
+    int i;
+    for (i = 0; i < height; i++)
+	mark_dirty (y + i, x * Bpp, (x + width) * Bpp);
+}
+
+/*
+ * Write one line from the framebuffer to the locked host bitmap
+ *
+ * dstbase    = locked host bitmap (gfx_lock_picasso)
+ * srcp       = Pointer to first byte in the source line to write
  * line_no    = Number of line to write (relative to visible screen).
  * first_byte = Offset in bytes from start of line to first byte to write.
  * byte_count = Number of bytes to write from source line.
  */
-STATIC_INLINE void write_currline (uae_u8 *srcp, int line_no, int first_byte, int byte_count)
+STATIC_INLINE void write_line_locked (uae_u8 *dstbase, uae_u8 *srcp, int line_no, int first_byte, int byte_count)
 {
-	uae_u8 *dstp;
+	uae_u8 *dstp = dstbase;
+	int Bpp = GetBytesPerPixel (picasso_vidinfo.rgbformat);
 
-	if ((dstp = gfx_lock_picasso ()) != 0)
+	if (picasso_vidinfo.rgbformat == picasso96_state.RGBFormat)
 	{
-		int Bpp = GetBytesPerPixel (picasso_vidinfo.rgbformat);
+		dstp += line_no * picasso_vidinfo.rowbytes + first_byte;
 
-		if (picasso_vidinfo.rgbformat == picasso96_state.RGBFormat)
-		{
-			dstp += line_no * picasso_vidinfo.rowbytes + first_byte;
-
-			if (need_argb32_hack && Bpp == 4)
-				memcpy_bswap32 (dstp, srcp, byte_count);
-			else
-				memcpy (dstp, srcp, byte_count);
-		}
+		if (need_argb32_hack && Bpp == 4)
+			memcpy_bswap32 (dstp, srcp, byte_count);
 		else
+			memcpy (dstp, srcp, byte_count);
+	}
+	else
+	{
+		dstp += line_no * picasso_vidinfo.rowbytes + first_byte * Bpp;
+
+		switch (Bpp)
 		{
-			dstp += line_no * picasso_vidinfo.rowbytes + first_byte * Bpp;
+			case 2:
+				{
+					int i;
+					uae_u16 *dstp16 = (uae_u16*) dstp;
+					for (i = 0; i < byte_count; i++)
+						*dstp16++ = picasso_vidinfo.clut[srcp[i]];
+				}
+				break;
 
-			output_update_clut();
-
-			switch (Bpp)
-			{
-				case 2:
-					{
-						int i;
-						uae_u16 *dstp16 = (uae_u16*) dstp;
-		   				for (i = 0; i < byte_count; i++)
-							*dstp16++ = picasso_vidinfo.clut[srcp[i]];
-					}
-					break;
-
-				case 4: 
-					{
-						int i;
-						for (i = 0; i < byte_count; i++)
-							*((uae_u32 *) dstp + i) = picasso_vidinfo.clut[srcp[i]];
-					}
-					break;
-			}
+			case 4:
+				{
+					int i;
+					for (i = 0; i < byte_count; i++)
+						*((uae_u32 *) dstp + i) = picasso_vidinfo.clut[srcp[i]];
+				}
+				break;
 		}
-		gfx_unlock_picasso ();
 	}
 }
 
+/* Copy all changed lines to the host bitmap: one lock for all of them */
+static void p96_flush_dirty (void)
+{
+    uae_u8 *dst, *fb;
+    int y, last, fb_bpp, maxbytes;
+
+    if (dirty_first > dirty_last)
+	return;
+    if (!picasso_on || !gfxmemory || !picasso96_state.Address) {
+	dirty_clear ();
+	return;
+    }
+    last = dirty_last;
+    if (last >= picasso96_state.Height)
+	last = picasso96_state.Height - 1;
+    for (y = dirty_first; y <= last; y++)
+	if (dirty_hi[y])
+	    DX_Invalidate (y, y);
+    if (!picasso_vidinfo.extra_mem) {
+	dirty_clear ();
+	return;
+    }
+
+    fb_bpp   = picasso96_state.BytesPerPixel;
+    maxbytes = picasso96_state.Width * fb_bpp;
+    fb = gfxmemory + (picasso96_state.Address - gfxmem_start)
+	 + picasso96_state.YOffset * picasso96_state.BytesPerRow
+	 + picasso96_state.XOffset * fb_bpp;
+
+    if (picasso_vidinfo.rgbformat != picasso96_state.RGBFormat)
+	output_update_clut ();
+    dst = gfx_lock_picasso ();
+    if (dst) {
+	for (y = dirty_first; y <= last; y++) {
+	    int lo = dirty_lo[y], hi = dirty_hi[y];
+	    if (!hi)
+		continue;
+	    if (hi > maxbytes)
+		hi = maxbytes;
+	    if (hi > lo)
+		write_line_locked (dst, fb + y * picasso96_state.BytesPerRow + lo, y, lo, hi - lo);
+	}
+	gfx_unlock_picasso ();
+    }
+    dirty_clear ();
+}
+
+/* The current line of successive CPU writes goes into the dirty lines */
 static void flush_currline (void)
 {
     int line_no = currline_y - picasso96_state.YOffset;
 
-    /* We only need to flush this line to the screen if the line
-     * is acutally visible on screen */
+    /* We only need this line if it is actually visible on screen */
     if (line_no >= 0 && line_no < picasso96_state.Height) {
+	uae_u8 fb_bpp  = picasso96_state.BytesPerPixel;
+	int byte_count = (currline_max - currline_min);
+	int first_byte = currline_min - currline_start
+			 - (picasso96_state.XOffset * fb_bpp);
 
-	/* Tell the graphics system that this line needs to be
-	 * redrawn */
-	DX_Invalidate (line_no, line_no);
-
-	/* If our graphics system uses a separate buffer, then
-	* that must be updated too */
-	if (picasso_vidinfo.extra_mem) {
-	    uae_u8 fb_bpp  = picasso96_state.BytesPerPixel;
-	    int byte_count = (currline_max - currline_min);
-	    int first_byte = currline_min - currline_start
-			     - (picasso96_state.XOffset * fb_bpp);
-	    uae_u8 *srcp   = (currline_min - gfxmem_start) + gfxmemory;
-
-	    if (first_byte < 0) {
-		byte_count += first_byte;
-		srcp       += first_byte;
-		first_byte = 0;
-	    }
-	    if ((first_byte + byte_count) > (picasso96_state.Width * fb_bpp))
-		byte_count = picasso96_state.Width * fb_bpp - first_byte;
-
-	    if (byte_count > 0)
-		write_currline (srcp, line_no, first_byte, byte_count);
+	if (first_byte < 0) {
+	    byte_count += first_byte;
+	    first_byte = 0;
 	}
+	if ((first_byte + byte_count) > (picasso96_state.Width * fb_bpp))
+	    byte_count = picasso96_state.Width * fb_bpp - first_byte;
+
+	if (byte_count > 0)
+	    mark_dirty (line_no, first_byte, first_byte + byte_count);
     }
     currline_start = 0xFFFFFFFF;
 }
 
+/* Only remember the pending CPU line (no host bitmap access) - used by the
+ * blit functions; do_blit() flushes before a host blit */
+STATIC_INLINE void wgfx_mergeline (void)
+{
+    if (currline_start != 0xFFFFFFFF && picasso_on)
+	flush_currline ();
+}
+
+/* Bring the host bitmap up to date (frame end, panning) */
 STATIC_INLINE void wgfx_flushline (void)
 {
-    if (currline_start == 0xFFFFFFFF || !picasso_on)
-	return;
-    flush_currline ();
+    wgfx_mergeline ();
+    p96_flush_dirty ();
 }
 
 STATIC_INLINE int renderinfo_is_current_screen (struct RenderInfo *ri)
@@ -1326,14 +1301,13 @@ static uae_u32 AssignModeID (int w, int h, unsigned int *non_standard_count)
 * gbi_MaxVerResolution: fill this in for all modes (even if you don't support
 *     them).
 */
-uae_u32 REGPARAM2 picasso_InitCard (struct regstruct *regs)
+static void init_card_modes (uaecptr AmigaBoardInfo)
 {
     struct LibResolution res;
     int i;
     unsigned int non_standard_count = 0;
     int ModeInfoStructureCount = 1, LibResolutionStructureCount = 0;
     uaecptr amigamemptr = 0;
-    uaecptr AmigaBoardInfo = m68k_areg (regs, 2);
 
     put_word (AmigaBoardInfo + PSSO_BoardInfo_BitsPerCannon,	    DX_BitsPerCannon ());
     put_word (AmigaBoardInfo + PSSO_BoardInfo_RGBFormats,	    picasso96_pixel_format);
@@ -1396,7 +1370,14 @@ uae_u32 REGPARAM2 picasso_InitCard (struct regstruct *regs)
 
 	AmigaListAddTail (AmigaBoardInfo + PSSO_BoardInfo_ResolutionsList, amigamemptr);
     }
+}
 
+/* InitCard of the external uaegfx.card (Picasso96 package), called through
+ * uaelib function 29 with the BoardInfo in a2. The card sets its own
+ * function pointers and flags. */
+uae_u32 REGPARAM2 picasso_InitCard (struct regstruct *regs)
+{
+    init_card_modes (m68k_areg (regs, 2));
     return 0;
 }
 
@@ -1425,7 +1406,7 @@ uae_u32 REGPARAM2 picasso_SetSwitch (struct regstruct *regs)
 
     P96TRACE (("P96: SetSwitch() - trying to show %s screen\n", flag ? "picasso96" : "amiga"));
 
-    flush_icache (5); /* Changing the screen mode might make gfx memory
+    flush_icache_hard ("picasso96 switch"); /* Changing the screen mode might make gfx memory
 			 directly accessible, or no longer thus accessible */
 
     /* Put old switch-state in D0 */
@@ -1435,6 +1416,7 @@ uae_u32 REGPARAM2 picasso_SetSwitch (struct regstruct *regs)
 void picasso_enablescreen (int on)
 {
     currline_start = 0xFFFFFFFF;
+    dirty_clear ();             /* v16: picasso_refresh() marks everything */
     picasso_refresh (1);
 }
 
@@ -1455,7 +1437,23 @@ void picasso_handle_vsync (void)
     first_color_changed = 256;
     last_color_changed = -1;
 
-    /* Flush any cached changes to the screen. */
+#ifdef JIT
+    /* v16: with comp_trust "direct"/"afterPic" a translated block may write
+     * into the framebuffer directly (its history saw a different address),
+     * past flush_write(). Copy the whole screen now and then so such writes
+     * do not stay invisible. Not needed with "indirect" (the default). */
+    if (picasso_on && currprefs.cachesize
+	&& (currprefs.comptrustbyte != 1 || currprefs.comptrustword != 1 || currprefs.comptrustlong != 1)) {
+	static int frames;
+	if (++frames >= 50) {
+	    frames = 0;
+	    mark_dirty_rect (0, 0, picasso96_state.Width, picasso96_state.Height);
+	}
+    }
+#endif
+
+    /* Flush any cached changes to the screen: all changed lines with one
+     * lock of the host bitmap (v16) */
     wgfx_flushline ();
 }
 
@@ -1608,6 +1606,7 @@ static void init_picasso_screen (void)
     DX_SetPalette (0, 256);
 
     currline_start = 0xFFFFFFFF;
+    dirty_clear ();             /* v16: old mode's lines; picasso_refresh() marks everything */
     picasso_refresh (1);
 }
 
@@ -1763,7 +1762,7 @@ uae_u32 REGPARAM2 picasso_InvertRect (struct regstruct *regs)
     unsigned long width_in_bytes;
     int result = 0;
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (CopyRenderInfoStructureA2U (renderinfo, &ri)) {
 	P96TRACE (("P96: InvertRect %dbpp 0x%lx\n", Bpp, (long)mask));
@@ -1881,7 +1880,7 @@ uae_u32 REGPARAM2 picasso_FillRect (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (CopyRenderInfoStructureA2U (renderinfo, &ri) && Y != 0xFFFF) {
 	if (ri.RGBFormat != RGBFormat)
@@ -2142,7 +2141,7 @@ uae_u32 REGPARAM2 picasso_BlitRect (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     P96TRACE (("P96: BlitRect(%d, %d, %d, %d, %d, %d, 0x%x)\n", srcx, srcy,
 	       dstx, dsty, width, height, Mask));
@@ -2190,7 +2189,7 @@ uae_u32 REGPARAM2 picasso_BlitRectNoMaskComplete (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     P96TRACE (("P96: BlitRectNoMaskComplete() op 0x%2x, xy(%4d,%4d) -->"
 	       " xy(%4d,%4d), wh(%4d,%4d)\n",
@@ -2201,6 +2200,257 @@ uae_u32 REGPARAM2 picasso_BlitRectNoMaskComplete (struct regstruct *regs)
 
     return result;
 }
+
+/***********************************************************
+BlitRectTransparent:  (v16, from WinUAE)
+***********************************************************
+* a0:	struct BoardInfo
+* a1:	struct RenderInfo (src)
+* a2:	struct RenderInfo (dst)
+* d0:	WORD SrcX
+* d1:	WORD SrcY
+* d2:	WORD DstX
+* d3:	WORD DstY
+* d4:	WORD Width
+* d5:	WORD Height
+* d6:	ULONG transparent colour
+* d7:	RGBFTYPE RGBFormat
+* Copies all pixels whose colour differs from the transparent colour.
+* Colours are compared as they are stored in Amiga memory (big endian),
+* without the unused alpha / padding bits.
+***********************************************************/
+static uae_u32 transparent_mask (uae_u32 RGBFmt)
+{
+    switch (RGBFmt) {
+	case RGBFB_CLUT:      return 0xff;
+	case RGBFB_R8G8B8:
+	case RGBFB_B8G8R8:    return 0xffffff;
+	case RGBFB_A8R8G8B8:
+	case RGBFB_A8B8G8R8:  return 0x00ffffff;
+	case RGBFB_R8G8B8A8:
+	case RGBFB_B8G8R8A8:  return 0xffffff00;
+	case RGBFB_R5G5B5:    return 0x7fff;
+	case RGBFB_R5G5B5PC:
+	case RGBFB_B5G5R5PC:  return 0xff7f;
+	default:              return 0xffff;
+    }
+}
+
+STATIC_INLINE uae_u32 read_pixel_be (const uae_u8 *p, int Bpp)
+{
+    switch (Bpp) {
+	case 1:  return p[0];
+	case 2:  return (p[0] << 8) | p[1];
+	case 3:  return (p[0] << 16) | (p[1] << 8) | p[2];
+	default: return ((uae_u32) p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
+    }
+}
+
+uae_u32 REGPARAM2 picasso_BlitRectTransparent (struct regstruct *regs)
+{
+    uaecptr srcri        =          m68k_areg (regs, 1);
+    uaecptr dstri        =          m68k_areg (regs, 2);
+    unsigned long srcx   = (uae_u16)m68k_dreg (regs, 0);
+    unsigned long srcy   = (uae_u16)m68k_dreg (regs, 1);
+    unsigned long dstx   = (uae_u16)m68k_dreg (regs, 2);
+    unsigned long dsty   = (uae_u16)m68k_dreg (regs, 3);
+    unsigned long width  = (uae_u16)m68k_dreg (regs, 4);
+    unsigned long height = (uae_u16)m68k_dreg (regs, 5);
+    uae_u32 color        =          m68k_dreg (regs, 6);
+    uae_u32 RGBFmt       = (uae_u8) m68k_dreg (regs, 7);
+
+    struct RenderInfo sri, dri;
+    uae_u8 *tmp = NULL, *src, *dst;
+    unsigned long y, x, srcbpr;
+    uae_u32 mask;
+    int Bpp;
+
+#ifdef JIT
+    special_mem |= picasso_is_special_read | picasso_is_special;
+#endif
+
+    wgfx_mergeline ();
+
+    if (!CopyRenderInfoStructureA2U (srcri, &sri) || !CopyRenderInfoStructureA2U (dstri, &dri))
+	return 0;
+    Bpp = GetBytesPerPixel (RGBFmt);
+    if (Bpp == 0 || width == 0 || height == 0)
+	return 0;
+
+    mask   = transparent_mask (RGBFmt);
+    color &= mask;
+    src    = sri.Memory + srcx * Bpp + srcy * sri.BytesPerRow;
+    dst    = dri.Memory + dstx * Bpp + dsty * dri.BytesPerRow;
+    srcbpr = sri.BytesPerRow;
+
+    /* Same bitmap (possibly overlapping): copy the source rectangle first */
+    if (sri.Memory == dri.Memory) {
+	tmp = xmalloc (width * Bpp * height);
+	if (!tmp)
+	    return 0;
+	for (y = 0; y < height; y++)
+	    memcpy (tmp + y * width * Bpp, src + y * sri.BytesPerRow, width * Bpp);
+	src    = tmp;
+	srcbpr = width * Bpp;
+    }
+
+    for (y = 0; y < height; y++) {
+	const uae_u8 *s = src + y * srcbpr;
+	uae_u8 *d = dst + y * dri.BytesPerRow;
+	for (x = 0; x < width; x++, s += Bpp, d += Bpp) {
+	    if ((read_pixel_be (s, Bpp) & mask) != color)
+		memcpy (d, s, Bpp);
+	}
+    }
+    if (tmp)
+	free (tmp);
+
+    if (renderinfo_is_current_screen (&dri))
+	do_blit (&dri, Bpp, dstx, dsty, dstx, dsty, width, height, BLIT_SRC, 0);
+
+    P96TRACE (("P96: BlitRectTransparent(%d,%d -> %d,%d, %dx%d, colour %08x, fmt %d)\n",
+	       srcx, srcy, dstx, dsty, width, height, color, RGBFmt));
+    return 1;
+}
+
+/*
+ * Hardware sprite (mouse pointer), v16, after WinUAE picasso96_win.cpp.
+ * The emulation only keeps the image and position; the host side mixes the
+ * pointer into the output picture (gfx-amigaos/ami-win.c), the frame
+ * buffer itself is never touched.
+ */
+struct picasso96_sprite picasso96_sprite;
+
+/*
+ * SetSpritePosition:
+ * a0: struct BoardInfo *bi
+ * d7: RGBFTYPE RGBFormat
+ * The new position is in bi->MouseX / bi->MouseY (hot spot already applied
+ * by Picasso96, as in WinUAE).
+ */
+uae_u32 REGPARAM2 picasso_SetSpritePosition (struct regstruct *regs)
+{
+    uaecptr bi = m68k_areg (regs, 0);
+
+    if (!picasso96_sprite.enabled)
+	return 0;
+    picasso96_sprite.x = (uae_s16) get_word (bi + PSSO_BoardInfo_MouseX) - picasso96_state.XOffset;
+    picasso96_sprite.y = (uae_s16) get_word (bi + PSSO_BoardInfo_MouseY) - picasso96_state.YOffset;
+    return 1;
+}
+
+/*
+ * SetSpriteColor:
+ * a0: struct BoardInfo *bi
+ * d0.b: index (0-2)
+ * d1.b: red, d2.b: green, d3.b: blue
+ * d7: RGBFTYPE RGBFormat
+ */
+uae_u32 REGPARAM2 picasso_SetSpriteColor (struct regstruct *regs)
+{
+    int idx = (m68k_dreg (regs, 0) & 0xff) + 1;
+    uae_u32 rgb = ((m68k_dreg (regs, 1) & 0xff) << 16)
+		| ((m68k_dreg (regs, 2) & 0xff) << 8)
+		|  (m68k_dreg (regs, 3) & 0xff);
+
+    if (!picasso96_sprite.enabled || idx < 1 || idx > 3)
+	return 0;
+    if (picasso96_sprite.colors[idx] != rgb) {
+	picasso96_sprite.colors[idx] = rgb;
+	picasso96_sprite.serial++;
+    }
+    return 1;
+}
+
+static uae_u32 load_sprite_image (uaecptr bi)
+{
+    struct picasso96_sprite *spr = &picasso96_sprite;
+    int w = get_byte (bi + PSSO_BoardInfo_MouseWidth);
+    int h = get_byte (bi + PSSO_BoardInfo_MouseHeight);
+    uae_u32 flags = get_long (bi + PSSO_BoardInfo_Flags);
+    int hires = (flags & BIF_HIRESSPRITE) ? 2 : 1;
+    int big   = (flags & BIF_BIGSPRITE) ? 1 : 0;
+    uaecptr image = get_long (bi + PSSO_BoardInfo_MouseImage);
+    int datasize = 4 * hires + h * 4 * hires;
+    int x, y, yy;
+
+    spr->valid = 0;
+    spr->serial++;
+    if (w <= 0 || h <= 0 || !image || !valid_address (image, datasize))
+	return 1;
+    if (w > P96_SPRITE_MAXWIDTH)
+	w = P96_SPRITE_MAXWIDTH;
+    if (h > P96_SPRITE_MAXHEIGHT)
+	h = P96_SPRITE_MAXHEIGHT;
+
+    /* Image: one header line, then per line two bit planes (two words, or
+     * two longwords with BIF_HIRESSPRITE). BIF_BIGSPRITE: every pixel is
+     * doubled horizontally and vertically - width/height are already
+     * doubled, the image data is not. */
+    memset (spr->pixels, 0, sizeof spr->pixels);
+    for (y = 0, yy = 0; y < h; y++, yy++) {
+	uae_u8 *p = spr->pixels + y * P96_SPRITE_MAXWIDTH;
+	uae_u8 *prev = p;
+	uaecptr img = image + 4 * hires + yy * 4 * hires;
+	uae_u32 d1 = get_long (img);
+	uae_u32 d2 = get_long (img + 2 * hires);
+	int bits = 0;
+
+	x = 0;
+	while (x < w && bits < 16 * hires) {
+	    uae_u8 c = ((d2 & 0x80000000) ? 2 : 0) + ((d1 & 0x80000000) ? 1 : 0);
+	    d1 <<= 1;
+	    d2 <<= 1;
+	    bits++;
+	    *p++ = c;
+	    x++;
+	    if (big && x < w) {
+		*p++ = c;
+		x++;
+	    }
+	}
+	if (big && y + 1 < h) {
+	    y++;
+	    memcpy (spr->pixels + y * P96_SPRITE_MAXWIDTH, prev, w);
+	}
+    }
+    spr->width  = w;
+    spr->height = h;
+    spr->valid  = 1;
+    return 1;
+}
+
+/*
+ * SetSpriteImage:
+ * a0: struct BoardInfo *bi
+ * d7: RGBFTYPE RGBFormat
+ */
+uae_u32 REGPARAM2 picasso_SetSpriteImage (struct regstruct *regs)
+{
+    if (!picasso96_sprite.enabled)
+	return 0;
+    return load_sprite_image (m68k_areg (regs, 0));
+}
+
+/*
+ * SetSprite:
+ * a0: struct BoardInfo *bi
+ * d0: BOOL activate
+ * d7: RGBFTYPE RGBFormat
+ */
+uae_u32 REGPARAM2 picasso_SetSprite (struct regstruct *regs)
+{
+    if (!picasso96_sprite.enabled)
+	return 0;
+    if (m68k_dreg (regs, 0)) {
+	load_sprite_image (m68k_areg (regs, 0));
+	picasso96_sprite.visible = 1;
+    } else
+	picasso96_sprite.visible = 0;
+    picasso96_sprite.serial++;
+    return 1;
+}
+
 
 /* This utility function is used both by BlitTemplate() and BlitPattern() */
 STATIC_INLINE void PixelWrite1 (uae_u8 * mem, int bits, uae_u32 fgpen, uae_u32 mask)
@@ -2297,7 +2547,7 @@ uae_u32 REGPARAM picasso_BlitPattern (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (CopyRenderInfoStructureA2U (rinf, &ri)
 		&& CopyPatternStructureA2U (pinf, &pattern)) {
@@ -2450,7 +2700,7 @@ uae_u32 REGPARAM2 picasso_BlitTemplate (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (CopyRenderInfoStructureA2U (rinf, &ri) && CopyTemplateStructureA2U (tmpl, &tmp)) {
 	Bpp = GetBytesPerPixel (ri.RGBFormat);
@@ -2728,7 +2978,7 @@ uae_u32 REGPARAM2 picasso_BlitPlanar2Chunky (struct regstruct *regs)
     struct RenderInfo local_ri;
     struct BitMap local_bm;
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (minterm != 0x0C) {
 	P96TRACE (("P96: ERROR - BlitPlanar2Chunky() has minterm 0x%x, which"
@@ -2884,7 +3134,7 @@ uae_u32 REGPARAM2 picasso_BlitPlanar2Direct (struct regstruct *regs)
     special_mem |= picasso_is_special_read | picasso_is_special;
 #endif
 
-    wgfx_flushline ();
+    wgfx_mergeline ();
 
     if (minterm == BLIT_SRC) {
 	if (CopyRenderInfoStructureA2U (ri, &local_ri)
@@ -3100,6 +3350,447 @@ static int resolution_compare (const void *a, const void *b)
     return ma->depth - mb->depth;
 }
 
+
+/****************************************************************************
+ *
+ * Built-in uaegfx.card (v16, after WinUAE uaegfx_card_install() /
+ * inituaegfxfuncs())
+ *
+ * E-UAE used to need the uaegfx.card file of the Picasso96 package, which
+ * calls the emulation through uaelib (functions 16-40 in uaelib.c). Now the
+ * card is a library in the boot ROM area: a Resident (RTF_AUTOINIT) added in
+ * filesys_diagentry() creates "uaegfx.card" at boot, so rtg.library finds it
+ * in memory and never loads a card file from LIBS:Picasso96. Only the
+ * Picasso96 system (rtg.library) and the monitor file DEVS:Monitors/UAEGFX
+ * are needed on the Amiga side.
+ *
+ * InitCard() of the built-in card fills all function slots of the BoardInfo
+ * with small 68k stubs that call the emulation through traps. The stubs are
+ * written once into the rtarea by uaegfx_install_code() (rtarea_init()).
+ *
+ * The uaelib path stays for the old card file; it is only used when the
+ * built-in card is not in memory (e.g. no graphics card RAM at boot).
+ ****************************************************************************/
+
+#include "autoconf.h"
+#include "traps.h"
+
+#define UAEGFX_VERSION  3
+#define UAEGFX_REVISION 5
+
+static uaecptr uaegfx_base;            /* library base on the Amiga side, 0 = not created */
+static int     uaegfx_interrupt_on;    /* SetInterrupt (TRUE) */
+static uaecptr uaegfx_resname, uaegfx_resid, uaegfx_prefix, uaegfx_vblankname;
+static uaecptr uaegfx_initstruct;      /* rt_Init for RTF_AUTOINIT */
+static uaecptr uaegfx_rts;             /* plain RTS */
+
+enum {
+    SLOT_DEFAULT, /* trap; d0 == 0 -> jump to the default function of the slot */
+    SLOT_TRAP,    /* trap, return value in d0 */
+    SLOT_PASS,    /* jump to the default function of the slot */
+    SLOT_FIXED,   /* fixed 68k code */
+    SLOT_NONE     /* RTS */
+};
+
+struct uaegfx_slot {
+    int     offset;     /* PSSO_BoardInfo_xxx */
+    int     type;
+    uaecptr code;       /* 68k address, set by uaegfx_install_code() */
+    int     need;       /* 0 = always, 1 = hardware sprite, 2 = vblank interrupt */
+};
+
+#define MAX_UAEGFX_SLOTS 48
+static struct uaegfx_slot uaegfx_slots[MAX_UAEGFX_SLOTS];
+static int uaegfx_nslots;
+
+/* Simple traps get the CPU registers; TrapContext starts with them. */
+#define P96TRAP(name) \
+    static uae_u32 REGPARAM2 trap_##name (TrapContext *ctx) { return picasso_##name (&ctx->regs); }
+
+P96TRAP (FillRect)
+P96TRAP (InvertRect)
+P96TRAP (BlitRect)
+P96TRAP (BlitRectNoMaskComplete)
+P96TRAP (BlitRectTransparent)
+P96TRAP (BlitPattern)
+P96TRAP (BlitTemplate)
+P96TRAP (BlitPlanar2Chunky)
+P96TRAP (BlitPlanar2Direct)
+P96TRAP (SetSwitch)
+P96TRAP (SetColorArray)
+P96TRAP (SetDAC)
+P96TRAP (SetGC)
+P96TRAP (SetPanning)
+P96TRAP (SetDisplay)
+P96TRAP (CalculateBytesPerRow)
+P96TRAP (SetSprite)
+P96TRAP (SetSpritePosition)
+P96TRAP (SetSpriteImage)
+P96TRAP (SetSpriteColor)
+
+/*
+ * SetInterrupt:
+ * a0: struct BoardInfo *bi
+ * d0: BOOL state
+ * Switches the VBLANK interrupt of the card on or off. While it is on,
+ * picasso_trigger_vblank() makes the card's VERTB server Cause() the
+ * SoftInterrupt of the BoardInfo once per frame.
+ */
+static uae_u32 REGPARAM2 trap_SetInterrupt (TrapContext *ctx)
+{
+    uaegfx_interrupt_on = m68k_dreg (&ctx->regs, 0) ? 1 : 0;
+    return uaegfx_interrupt_on;
+}
+
+void picasso_trigger_vblank (void)
+{
+    uaecptr bi;
+
+    if (!uaegfx_base || !uaegfx_interrupt_on || !currprefs.rtg_hardwareinterrupt)
+	return;
+    bi = get_long (uaegfx_base + CARD_BOARDINFO);
+    if (!bi)
+	return;
+    put_long (uaegfx_base + CARD_IRQPTR, bi + PSSO_BoardInfo_SoftInterrupt);
+    /* Bit 0 of the first byte: the VERTB server of the card (runs in the
+     * Amiga's own vertical blank) clears it and calls Cause(). */
+    put_byte (uaegfx_base + CARD_IRQFLAG, 1);
+}
+
+static void add_slot (int offset, int type, uaecptr code, int need)
+{
+    if (uaegfx_nslots < MAX_UAEGFX_SLOTS) {
+	uaegfx_slots[uaegfx_nslots].offset = offset;
+	uaegfx_slots[uaegfx_nslots].type   = type;
+	uaegfx_slots[uaegfx_nslots].code   = code;
+	uaegfx_slots[uaegfx_nslots].need   = need;
+	uaegfx_nslots++;
+    }
+}
+
+/* trap; if it returns 0, continue in the default function (WinUAE RTGCALL):
+ *   movem.l d0,-(sp) / trap / tst.l d0 / movem.l (sp)+,d0 / bne.s rts /
+ *   move.l default(a0),-(sp) / rts */
+static void stub_default (int offset, int defoffset, TrapHandler h)
+{
+    add_slot (offset, SLOT_DEFAULT, here (), 0);
+    dl (0x48e78000);
+    calltrap (deftrap (h));
+    dw (0x4a80);
+    dl (0x4cdf0001);
+    dw (0x6604);
+    dw (0x2f28);
+    dw (defoffset);
+    dw (RTS);
+}
+
+static void stub_trap (int offset, TrapHandler h, int need)
+{
+    add_slot (offset, SLOT_TRAP, here (), need);
+    calltrap (deftrap (h));
+    dw (RTS);
+}
+
+/* only the default function: move.l default(a0),-(sp) / rts */
+static void stub_pass (int offset, int defoffset)
+{
+    add_slot (offset, SLOT_PASS, here (), 0);
+    dw (0x2f28);
+    dw (defoffset);
+    dw (RTS);
+}
+
+static uae_u32 REGPARAM2 trap_gfx_open (TrapContext *ctx)
+{
+    put_word (uaegfx_base + 32, get_word (uaegfx_base + 32) + 1);   /* lib_OpenCnt */
+    return uaegfx_base;
+}
+
+static uae_u32 REGPARAM2 trap_gfx_close (TrapContext *ctx)
+{
+    put_word (uaegfx_base + 32, get_word (uaegfx_base + 32) - 1);
+    return 0;
+}
+
+static uae_u32 REGPARAM2 trap_gfx_expunge (TrapContext *ctx)
+{
+    return 0;    /* never expunged (lives in the boot ROM) */
+}
+
+static uae_u32 REGPARAM2 trap_FindCard (TrapContext *ctx)
+{
+    return picasso_FindCard (&ctx->regs);
+}
+
+/*
+ * Init routine of the library (RTF_AUTOINIT): d0 = library base, a6 = exec.
+ * Fills the card fields and the VBLANK interrupt structure; the 68k code
+ * around this trap then calls AddIntServer (INTB_VERTB).
+ */
+static uae_u32 REGPARAM2 trap_gfx_init (TrapContext *ctx)
+{
+    uaecptr base = m68k_dreg (&ctx->regs, 0);
+    uaecptr irq  = base + CARD_VBLANKIRQ;
+    uaecptr c    = base + CARD_IRQCODE;
+    uaecptr exec = get_long (4);
+
+    uaegfx_base = base;
+    uaegfx_interrupt_on = 0;
+
+    put_long (base + CARD_EXECBASE, exec);
+    put_long (base + CARD_IRQEXECBASE, exec);
+    put_long (base + CARD_NAME, uaegfx_resname);
+    put_long (base + CARD_BOARDINFO, 0);
+    put_long (base + CARD_IRQFLAG, 0);
+
+    /* struct Interrupt: ln_Type NT_INTERRUPT, ln_Pri 5, ln_Name, is_Data, is_Code */
+    put_word (irq + 8, 0x0205);
+    put_long (irq + 10, uaegfx_vblankname);
+    put_long (irq + 14, base + CARD_IRQFLAG);
+    put_long (irq + 18, c);
+
+    /* Server code (a1 = is_Data = CARD_IRQFLAG):
+     *   bclr #0,(a1) / beq.s out / move.l 8(a1),a6 / move.l 4(a1),a1 /
+     *   jsr Cause(a6) / out: moveq #0,d0 / rts */
+    put_long (c, 0x08910000); c += 4;
+    put_word (c, 0x670e);     c += 2;
+    put_long (c, 0x2c690008); c += 4;
+    put_long (c, 0x22690004); c += 4;
+    put_long (c, 0x4eaeff4c); c += 4;
+    put_word (c, 0x7000);     c += 2;
+    put_word (c, RTS);
+
+    write_log ("uaegfx.card %d.%d (built-in) init @$%08x\n", UAEGFX_VERSION, UAEGFX_REVISION, base);
+    return base;
+}
+
+/*
+ * InitCard of the built-in card:
+ * a0: struct BoardInfo *bi, a1: tooltypes
+ */
+static uae_u32 REGPARAM2 trap_InitCard (TrapContext *ctx)
+{
+    uaecptr bi = m68k_areg (&ctx->regs, 0);
+    uae_u32 flags;
+    int i;
+
+    init_card_modes (bi);
+
+    put_long (bi + PSSO_BoardInfo_BoardName, uaegfx_prefix);
+    put_long (bi + PSSO_BoardInfo_GraphicsControllerType, 0);
+    put_long (bi + PSSO_BoardInfo_PaletteChipType, 0);
+    put_long (bi + PSSO_BoardInfo_MemoryClock, 200000000);
+    for (i = 0; i < MAXMODES; i++) {
+	put_long (bi + PSSO_BoardInfo_PixelClockCount + i * 4, 1);       /* only one clock */
+	put_word (bi + PSSO_BoardInfo_MaxHorValue + i * 2, 0x4000);
+	put_word (bi + PSSO_BoardInfo_MaxVerValue + i * 2, 0x4000);
+    }
+
+    /* user flags (upper half, e.g. NOBLITTER from the monitor tooltypes) stay */
+    flags = get_long (bi + PSSO_BoardInfo_Flags) & 0xffff0000;
+    if (flags & BIF_NOBLITTER)
+	write_log ("P96: Blitter disabled in DEVS:Monitors/UAEGFX!\n");
+    else
+	flags |= BIF_BLITTER;
+    flags |= BIF_NOMEMORYMODEMIX | BIF_GRANTDIRECTACCESS | BIF_INDISPLAYCHAIN;
+
+    memset (&picasso96_sprite, 0, sizeof picasso96_sprite);
+    picasso96_sprite.enabled = currprefs.rtg_hardwaresprite ? 1 : 0;
+    if (picasso96_sprite.enabled && !gfx_rtg_sprite_supported ()) {
+	/* 8 bit host screen: no composite, Picasso96 uses its software pointer */
+	write_log ("P96: hardware sprite not offered (8 bit host screen)\n");
+	picasso96_sprite.enabled = 0;
+    }
+    if (picasso96_sprite.enabled) {
+	flags |= BIF_HARDWARESPRITE;
+	put_word (bi + PSSO_BoardInfo_SoftSpriteFlags, 0);
+    } else
+	put_word (bi + PSSO_BoardInfo_SoftSpriteFlags, picasso96_pixel_format);
+    if (currprefs.rtg_hardwareinterrupt)
+	flags |= BIF_VBLANKINTERRUPT;
+    put_long (bi + PSSO_BoardInfo_Flags, flags);
+
+    for (i = 0; i < uaegfx_nslots; i++) {
+	struct uaegfx_slot *sl = &uaegfx_slots[i];
+	if (sl->need == 1 && !picasso96_sprite.enabled)
+	    continue;
+	if (sl->need == 2 && !currprefs.rtg_hardwareinterrupt)
+	    continue;
+	put_long (bi + sl->offset, sl->code);
+    }
+
+    if (uaegfx_base) {
+	put_long (uaegfx_base + CARD_BOARDINFO, bi);
+	/* as in WinUAE: the interrupt structure of the card for rtg.library */
+	for (i = 0; i < 22; i++)
+	    put_byte (bi + PSSO_BoardInfo_HardInterrupt + i, get_byte (uaegfx_base + CARD_VBLANKIRQ + i));
+    }
+
+    write_log ("P96: built-in uaegfx.card, hardware sprite %s, vblank interrupt %s\n",
+	       picasso96_sprite.enabled ? "on" : "off",
+	       currprefs.rtg_hardwareinterrupt ? "on" : "off");
+    return -1;
+}
+
+/*
+ * Write the 68k code of the card into the rtarea. Called from rtarea_init
+ * (main.c) on every start of the emulation, after the traps were reset.
+ */
+void uaegfx_install_code (void)
+{
+    uaecptr openfunc, closefunc, expungefunc, findcardfunc, initcardfunc;
+    uaecptr functable, datatable, initcode;
+
+    uaegfx_nslots = 0;
+    uaegfx_base   = 0;
+
+    uaegfx_resname    = ds ("uaegfx.card");
+    uaegfx_resid      = ds ("UAE Graphics Card 3.5 (E-UAE built-in)");
+    uaegfx_prefix     = ds ("UAE");
+    uaegfx_vblankname = ds ("UAE Graphics Card VBLANK");
+
+    uaegfx_rts = here ();
+    dw (RTS);
+
+    /* ResolvePixelClock: move.l d0,gmi_PixelClock(a1) / moveq #0,d0 /
+     * move.b #98,gmi_Numerator(a1) / move.b #14,gmi_Denominator(a1) / rts */
+    add_slot (PSSO_BoardInfo_ResolvePixelClock, SLOT_FIXED, here (), 0);
+    dl (0x2340002c);
+    dw (0x7000);
+    dl (0x137c0062); dw (0x002a);
+    dl (0x137c000e); dw (0x002b);
+    dw (RTS);
+
+    /* GetPixelClock: move.l #clock,d0 / rts */
+    add_slot (PSSO_BoardInfo_GetPixelClock, SLOT_FIXED, here (), 0);
+    dw (0x203c);
+    dl (100227260);
+    dw (RTS);
+
+    /* CalculateMemory: move.l a1,d0 / rts (no planar modes) */
+    add_slot (PSSO_BoardInfo_CalculateMemory, SLOT_FIXED, here (), 0);
+    dw (0x2009);
+    dw (RTS);
+
+    /* GetCompatibleFormats: all chunky formats can coexist */
+    add_slot (PSSO_BoardInfo_GetCompatibleFormats, SLOT_FIXED, here (), 0);
+    dw (0x203c);
+    dl (RGBMASK_8BIT | RGBMASK_15BIT | RGBMASK_16BIT | RGBMASK_24BIT | RGBMASK_32BIT);
+    dw (RTS);
+
+    add_slot (PSSO_BoardInfo_SetClock,         SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_SetMemoryMode,    SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_SetWriteMask,     SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_SetClearMask,     SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_SetReadPlane,     SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_WaitVerticalSync, SLOT_NONE, uaegfx_rts, 0);
+    add_slot (PSSO_BoardInfo_WaitBlitter,      SLOT_NONE, uaegfx_rts, 0);
+
+    stub_default (PSSO_BoardInfo_BlitPlanar2Direct,      PSSO_BoardInfo_BlitPlanar2DirectDefault,      trap_BlitPlanar2Direct);
+    stub_default (PSSO_BoardInfo_FillRect,               PSSO_BoardInfo_FillRectDefault,               trap_FillRect);
+    stub_default (PSSO_BoardInfo_BlitRect,               PSSO_BoardInfo_BlitRectDefault,               trap_BlitRect);
+    stub_default (PSSO_BoardInfo_BlitPlanar2Chunky,      PSSO_BoardInfo_BlitPlanar2ChunkyDefault,      trap_BlitPlanar2Chunky);
+    stub_default (PSSO_BoardInfo_BlitTemplate,           PSSO_BoardInfo_BlitTemplateDefault,           trap_BlitTemplate);
+    stub_default (PSSO_BoardInfo_InvertRect,             PSSO_BoardInfo_InvertRectDefault,             trap_InvertRect);
+    stub_default (PSSO_BoardInfo_BlitRectNoMaskComplete, PSSO_BoardInfo_BlitRectNoMaskCompleteDefault, trap_BlitRectNoMaskComplete);
+    stub_default (PSSO_BoardInfo_BlitRectTransparent,    PSSO_BoardInfo_BlitRectTransparentDefault,    trap_BlitRectTransparent);
+    stub_default (PSSO_BoardInfo_BlitPattern,            PSSO_BoardInfo_BlitPatternDefault,            trap_BlitPattern);
+
+    stub_trap (PSSO_BoardInfo_SetSwitch,            trap_SetSwitch, 0);
+    stub_trap (PSSO_BoardInfo_SetColorArray,        trap_SetColorArray, 0);
+    stub_trap (PSSO_BoardInfo_SetDAC,               trap_SetDAC, 0);
+    stub_trap (PSSO_BoardInfo_SetGC,                trap_SetGC, 0);
+    stub_trap (PSSO_BoardInfo_SetPanning,           trap_SetPanning, 0);
+    stub_trap (PSSO_BoardInfo_SetDisplay,           trap_SetDisplay, 0);
+    stub_trap (PSSO_BoardInfo_CalculateBytesPerRow, trap_CalculateBytesPerRow, 0);
+
+    stub_trap (PSSO_BoardInfo_SetSprite,            trap_SetSprite, 1);
+    stub_trap (PSSO_BoardInfo_SetSpritePosition,    trap_SetSpritePosition, 1);
+    stub_trap (PSSO_BoardInfo_SetSpriteImage,       trap_SetSpriteImage, 1);
+    stub_trap (PSSO_BoardInfo_SetSpriteColor,       trap_SetSpriteColor, 1);
+
+    stub_trap (PSSO_BoardInfo_SetInterrupt,         trap_SetInterrupt, 2);
+
+    stub_pass (PSSO_BoardInfo_ScrollPlanar, PSSO_BoardInfo_ScrollPlanarDefault);
+    stub_pass (PSSO_BoardInfo_UpdatePlanar, PSSO_BoardInfo_UpdatePlanarDefault);
+    stub_pass (PSSO_BoardInfo_DrawLine,     PSSO_BoardInfo_DrawLineDefault);
+
+    /* Library functions */
+    openfunc     = here (); calltrap (deftrap (trap_gfx_open));    dw (RTS);
+    closefunc    = here (); calltrap (deftrap (trap_gfx_close));   dw (RTS);
+    expungefunc  = here (); calltrap (deftrap (trap_gfx_expunge)); dw (RTS);
+    findcardfunc = here (); calltrap (deftrap (trap_FindCard));    dw (RTS);
+    initcardfunc = here (); calltrap (deftrap (trap_InitCard));    dw (RTS);
+
+    functable = here ();
+    dl (openfunc);
+    dl (closefunc);
+    dl (expungefunc);
+    dl (EXPANSION_nullfunc);
+    dl (findcardfunc);
+    dl (initcardfunc);
+    dl (0xFFFFFFFF);
+
+    /* DataTable (exec InitStruct) */
+    datatable = here ();
+    dw (0xE000); dw (0x0008); dw (0x0900);         /* INITBYTE LN_TYPE, NT_LIBRARY */
+    dw (0xE000); dw (0x0009); dw (0xCE00);         /* INITBYTE LN_PRI, -50 */
+    dw (0xC000); dw (0x000A); dl (uaegfx_resname); /* INITLONG LN_NAME */
+    dw (0xE000); dw (0x000E); dw (0x0600);         /* INITBYTE LIB_FLAGS, SUMUSED|CHANGED */
+    dw (0xD000); dw (0x0014); dw (UAEGFX_VERSION); /* INITWORD LIB_VERSION */
+    dw (0xD000); dw (0x0016); dw (UAEGFX_REVISION);/* INITWORD LIB_REVISION */
+    dw (0xC000); dw (0x0018); dl (uaegfx_resid);   /* INITLONG LIB_IDSTRING */
+    dw (0x0000);
+
+    /* Init routine: d0 = library base, a6 = SysBase
+     *   move.l d0,-(sp) / trap gfx_init / move.l (sp),a1 /
+     *   lea CARD_VBLANKIRQ(a1),a1 / moveq #5,d0 / jsr AddIntServer(a6) /
+     *   move.l (sp)+,d0 / rts */
+    initcode = here ();
+    dw (0x2f00);
+    calltrap (deftrap (trap_gfx_init));
+    dw (0x2257);
+    dw (0x43e9); dw (CARD_VBLANKIRQ);
+    dw (0x7005);
+    dl (0x4eaeff58);
+    dw (0x201f);
+    dw (RTS);
+
+    /* rt_Init for RTF_AUTOINIT: dataSize, functions, data, init routine */
+    align (4);
+    uaegfx_initstruct = here ();
+    dl (CARD_SIZEOF);
+    dl (functable);
+    dl (datatable);
+    dl (initcode);
+}
+
+/*
+ * Add the Resident of the built-in card behind the other ROMTags of the
+ * filesys DiagArea (filesys_diagentry() calls InitResident() for it).
+ * Only with graphics card memory.
+ */
+uaecptr uaegfx_add_resident (uaecptr resaddr)
+{
+    if (!allocated_gfxmem || !uaegfx_initstruct)
+	return resaddr;
+
+    put_word (resaddr + 0x0, 0x4AFC);                /* RTC_MATCHWORD */
+    put_long (resaddr + 0x2, resaddr);               /* rt_MatchTag */
+    put_long (resaddr + 0x6, resaddr + 0x1A);        /* rt_EndSkip */
+    put_word (resaddr + 0xA, 0x8100 | UAEGFX_VERSION); /* RTF_AUTOINIT|RTF_COLDSTART, version */
+    put_word (resaddr + 0xC, 0x0900);                /* NT_LIBRARY, pri 0 */
+    put_long (resaddr + 0xE, uaegfx_resname);
+    put_long (resaddr + 0x12, uaegfx_resid);
+    put_long (resaddr + 0x16, uaegfx_initstruct);
+    return resaddr + 0x1A;
+}
+
+int uaegfx_builtin_active (void)
+{
+    return uaegfx_base != 0;
+}
+
 /* Call this function first, near the beginning of code flow
  * NOTE: Don't stuff it in InitGraphics() which seems reasonable...
  * Instead, put it in customreset() for safe-keeping.  */
@@ -3108,6 +3799,12 @@ void InitPicasso96 (void)
     static int first_time = 1;
 
     memset (&picasso96_state, 0, sizeof (struct picasso96_state_struct));
+    /* Reset: the card library and its interrupt are created again at the
+     * next boot (filesys_diagentry); until then nothing may be written to
+     * the old library memory. */
+    uaegfx_base = 0;
+    uaegfx_interrupt_on = 0;
+    memset (&picasso96_sprite, 0, sizeof picasso96_sprite);
 
     if (first_time) {
 	int i;

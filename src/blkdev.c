@@ -40,11 +40,13 @@ static void install_driver (int flags)
 #else
 # ifdef TARGET_AMIGAOS
 
-extern struct device_functions devicefunc_scsi_amiga;
+/* v16: CD-ROM image drives (blkdev-cdimage.c) instead of host SCSI
+ * devices (od-amiga/blkdev-amiga.c) */
+extern struct device_functions devicefunc_cdimage;
 
 static void install_driver (int flags)
 {
-    device_func[DF_SCSI]  = &devicefunc_scsi_amiga;
+    device_func[DF_SCSI]  = &devicefunc_cdimage;
     device_func[DF_IOCTL] = 0;
 }
 # else
@@ -342,6 +344,14 @@ static void scsi_atapi_fixup_inquiry (uaecptr req)
 	    put_byte (scsi_data + 2, b);
 	}
     }
+}
+
+/* v16: SCSI command without data transfer, returns 1 on success */
+int sys_command_exec_out (int unitnum, const uae_u8 *cmd, int len)
+{
+    if (!device_func[DF_SCSI] || !device_func[DF_SCSI]->exec_out)
+	return 0;
+    return device_func[DF_SCSI]->exec_out (unitnum, cmd, len) != 0;
 }
 
 int sys_command_scsi_direct (int unitnum, uaecptr request)

@@ -1140,6 +1140,128 @@ div_unsigned(uae_u32 src_hi, uae_u32 src_lo, uae_u32 div, uae_u32 *quot, uae_u32
 	return 0;
 }
 
+/* Flags after CHK (also when no exception is taken). Behaviour as verified
+ * against real hardware by the UAE CPU tester (WinUAE setchkundefinedflags). */
+void m68k_chk_flags (struct regstruct *regs, uae_s32 src, uae_s32 dst, int is_word)
+{
+    if (currprefs.cpu_level < 2) {
+	/* 68000/68010: CV=0, Z: dst==0, N: dst<0 */
+	CLEAR_CZNV (&regs->ccrflags);
+	if (dst == 0)
+	    SET_ZFLG (&regs->ccrflags, 1);
+	if (dst < 0)
+	    SET_NFLG (&regs->ccrflags, 1);
+    } else if (currprefs.cpu_level == 2 || currprefs.cpu_level == 3) {
+	CLEAR_CZNV (&regs->ccrflags);
+	if (dst == 0)
+	    SET_ZFLG (&regs->ccrflags, 1);
+	SET_NFLG (&regs->ccrflags, dst < 0);
+	if (dst < 0 || dst > src) {
+	    int flgs, flgo, flgn;
+	    if (is_word) {
+		uae_s16 val = (uae_s16)src - (uae_s16)dst;
+		flgs = ((uae_s16)dst) < 0;
+		flgo = ((uae_s16)src) < 0;
+		flgn = val < 0;
+	    } else {
+		uae_s32 val = src - dst;
+		flgs = dst < 0;
+		flgo = src < 0;
+		flgn = val < 0;
+	    }
+	    SET_VFLG (&regs->ccrflags, (flgs ^ flgo) & (flgn ^ flgo));
+	    if (dst < 0)
+		SET_CFLG (&regs->ccrflags, dst > src || src >= 0);
+	    else
+		SET_CFLG (&regs->ccrflags, src >= 0);
+	}
+    } else if (currprefs.cpu_level == 4) {
+	SET_CFLG (&regs->ccrflags, 0);
+	if (dst < 0 || dst > src) {
+	    if ((dst < 0 && src >= 0) || (src >= 0 && dst >= src) || (dst < 0 && src < dst))
+		SET_CFLG (&regs->ccrflags, 1);
+	}
+	SET_NFLG (&regs->ccrflags, dst < 0);
+    } else {
+	/* 68060 */
+	SET_NFLG (&regs->ccrflags, 0);
+	if (dst < 0 || dst > src)
+	    SET_NFLG (&regs->ccrflags, dst < 0);
+    }
+}
+
+/* "Undefined" N and V after CHK2/CMP2, as measured on real hardware
+ * (UAE CPU tester / WinUAE setchk2undefinedflags). Z and C are set by the caller. */
+void m68k_chk2_flags (struct regstruct *regs, uae_s32 lower, uae_s32 upper, uae_s32 val)
+{
+    if (currprefs.cpu_level == 4)
+	return;
+    if (currprefs.cpu_level >= 5) {
+	SET_VFLG (&regs->ccrflags, 0);
+	SET_NFLG (&regs->ccrflags, val < 0);
+	return;
+    }
+    SET_NFLG (&regs->ccrflags, 0);
+    SET_VFLG (&regs->ccrflags, 0);
+    if (val == lower || val == upper)
+	return;
+    if (lower < 0 && upper >= 0) {
+	if (val < lower)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val >= 0 && val < upper)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val >= 0 && lower - val >= 0) {
+	    SET_VFLG (&regs->ccrflags, 1);
+	    SET_NFLG (&regs->ccrflags, 0);
+	    if (val > upper)
+		SET_NFLG (&regs->ccrflags, 1);
+	}
+    } else if (lower >= 0 && upper < 0) {
+	if (val >= 0)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val > upper)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val > lower && upper - val >= 0) {
+	    SET_VFLG (&regs->ccrflags, 1);
+	    SET_NFLG (&regs->ccrflags, 0);
+	}
+    } else if (lower >= 0 && upper >= 0 && lower > upper) {
+	if (val > upper && val < lower)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val < 0 && lower - val < 0)
+	    SET_VFLG (&regs->ccrflags, 1);
+	if (val < 0 && lower - val >= 0)
+	    SET_NFLG (&regs->ccrflags, 1);
+    } else if (lower >= 0 && upper >= 0 && lower <= upper) {
+	if (val >= 0 && val < lower)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val > upper)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val < 0 && upper - val < 0) {
+	    SET_VFLG (&regs->ccrflags, 1);
+	    SET_NFLG (&regs->ccrflags, 1);
+	}
+    } else if (lower < 0 && upper < 0 && lower > upper) {
+	if (val >= 0)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val > upper && val < lower)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val >= 0 && val - lower < 0) {
+	    SET_NFLG (&regs->ccrflags, 0);
+	    SET_VFLG (&regs->ccrflags, 1);
+	}
+    } else if (lower < 0 && upper < 0 && lower <= upper) {
+	if (val < lower)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val < 0 && val > upper)
+	    SET_NFLG (&regs->ccrflags, 1);
+	if (val >= 0 && val - lower < 0) {
+	    SET_NFLG (&regs->ccrflags, 1);
+	    SET_VFLG (&regs->ccrflags, 1);
+	}
+    }
+}
+
 void m68k_divl (uae_u32 opcode, uae_u32 src, uae_u16 extra, uaecptr oldpc)
 {
 #if defined(uae_s64)
@@ -1156,8 +1278,14 @@ void m68k_divl (uae_u32 opcode, uae_u32 src, uae_u16 extra, uaecptr oldpc)
 	    a &= 0xffffffffu;
 	    a |= (uae_s64)m68k_dreg (&regs, extra & 7) << 32;
 	}
-	rem = a % (uae_s64)(uae_s32)src;
-	quot = a / (uae_s64)(uae_s32)src;
+	if ((uae_u64)a == UVAL64(0x8000000000000000) && src == 0xffffffffu) {
+	    /* INT64_MIN / -1 is UB in C; on the 68k it is simply an overflow */
+	    quot = UVAL64(0x7fffffffffffffff);
+	    rem = 0;
+	} else {
+	    rem = a % (uae_s64)(uae_s32)src;
+	    quot = a / (uae_s64)(uae_s32)src;
+	}
 	if ((quot & UVAL64(0xffffffff80000000)) != 0
 	    && (quot & UVAL64(0xffffffff80000000)) != UVAL64(0xffffffff80000000))
 	{
@@ -1290,16 +1418,28 @@ void m68k_mull (uae_u32 opcode, uae_u32 src, uae_u16 extra)
 	a *= (uae_s64)(uae_s32)src;
 	SET_VFLG (&regs.ccrflags, 0);
 	SET_CFLG (&regs.ccrflags, 0);
-	SET_ZFLG (&regs.ccrflags, a == 0);
-	SET_NFLG (&regs.ccrflags, a < 0);
-	if (extra & 0x400)
-	    m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
-	else if ((a & UVAL64(0xffffffff80000000)) != 0
-		 && (a & UVAL64(0xffffffff80000000)) != UVAL64(0xffffffff80000000))
-	{
-	    SET_VFLG (&regs.ccrflags, 1);
+	if (extra & 0x400) {
+	    SET_ZFLG (&regs.ccrflags, a == 0);
+	    SET_NFLG (&regs.ccrflags, a < 0);
+	    /* Dh == Dl: 68020/030 keep the high word, 68040/060 the low word */
+	    if (currprefs.cpu_level >= 4) {
+		m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
+		m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
+	    } else {
+		m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
+		m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
+	    }
+	} else {
+	    /* 32 * 32 = 32: N and Z come from the 32 bit result, not the 64 bit product */
+	    SET_ZFLG (&regs.ccrflags, (uae_s32)a == 0);
+	    SET_NFLG (&regs.ccrflags, (uae_s32)a < 0);
+	    if ((a & UVAL64(0xffffffff80000000)) != 0
+		&& (a & UVAL64(0xffffffff80000000)) != UVAL64(0xffffffff80000000))
+	    {
+		SET_VFLG (&regs.ccrflags, 1);
+	    }
+	    m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
 	}
-	m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
     } else {
 	/* unsigned */
 	uae_u64 a = (uae_u64)(uae_u32)m68k_dreg (&regs, (extra >> 12) & 7);
@@ -1307,14 +1447,24 @@ void m68k_mull (uae_u32 opcode, uae_u32 src, uae_u16 extra)
 	a *= (uae_u64)src;
 	SET_VFLG (&regs.ccrflags, 0);
 	SET_CFLG (&regs.ccrflags, 0);
-	SET_ZFLG (&regs.ccrflags, a == 0);
-	SET_NFLG (&regs.ccrflags, ((uae_s64)a) < 0);
-	if (extra & 0x400)
-	    m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
-	else if ((a & UVAL64(0xffffffff00000000)) != 0) {
-	    SET_VFLG (&regs.ccrflags, 1);
+	if (extra & 0x400) {
+	    SET_ZFLG (&regs.ccrflags, a == 0);
+	    SET_NFLG (&regs.ccrflags, ((uae_s64)a) < 0);
+	    if (currprefs.cpu_level >= 4) {
+		m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
+		m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
+	    } else {
+		m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
+		m68k_dreg (&regs, extra & 7) = (uae_u32)(a >> 32);
+	    }
+	} else {
+	    SET_ZFLG (&regs.ccrflags, (uae_s32)a == 0);
+	    SET_NFLG (&regs.ccrflags, (uae_s32)a < 0);
+	    if ((a & UVAL64(0xffffffff00000000)) != 0) {
+		SET_VFLG (&regs.ccrflags, 1);
+	    }
+	    m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
 	}
-	m68k_dreg (&regs, (extra >> 12) & 7) = (uae_u32)a;
     }
 #else
     if (extra & 0x800) {

@@ -1,0 +1,1522 @@
+; E-UAE ReAction GUI catalog description (FlexCat style).
+; Texts are the built-in English defaults. IDs are fixed - never renumber
+; existing entries, only append new ones at the end.
+; Regenerate src/gui-reaction/locale_ids.h, locale_defs.c and the .catalog files with
+;   python3 tools/mkcatalog.py
+;
+## version $VER: E-UAE.catalog 1.0 (19.10.2026)
+## codeset 0
+## language english
+;
+MSG_START (1//)
+Start
+;
+MSG_PAUSE (2//)
+Pause
+;
+MSG_RESUME (3//)
+Resume
+;
+MSG_RESET (4//)
+Reset
+;
+MSG_STOP (5//)
+Stop
+;
+MSG_QUIT (6//)
+Quit
+;
+MSG_RUNNING (7//)
+Running
+;
+MSG_PAUSED (8//)
+Paused
+;
+MSG_STOPPED (9//)
+Stopped
+;
+MSG_STARTING (10//)
+Starting...
+;
+MSG_SELECT_IMAGE_FOR_DF_D (11//)
+Select image for DF%d
+;
+MSG_SAVE_SAVESTATE (12//)
+Save savestate
+;
+MSG_LOAD_SAVESTATE (13//)
+Load savestate
+;
+MSG_E_UAE_ERROR (14//)
+E-UAE Error
+;
+MSG_MEDIA (15//)
+Media
+;
+MSG_HARDWARE (16//)
+Hardware
+;
+MSG_HARD_DISKS (17//)
+Hard disks
+;
+MSG_DISPLAY (18//)
+Display
+;
+MSG_SOUND (19//)
+Sound
+;
+MSG_INPUT (20//)
+Input
+;
+MSG_CONFIGURATION (21//)
+Configuration
+;
+MSG_DESCRIPTION (22//)
+Description:
+;
+MSG_LOAD (23//)
+Load...
+;
+MSG_SAVE (24//)
+Save
+;
+MSG_SAVE_AS (25//)
+Save as...
+;
+MSG_SAVESTATES (26//)
+Savestates
+;
+MSG_LOAD_SAVESTATE_2 (27//)
+Load savestate...
+;
+MSG_SAVE_SAVESTATE_2 (28//)
+Save savestate...
+;
+MSG_GENERAL (29//)
+General
+;
+MSG_OPEN_GUI_AT_PROGRAM_START (30//)
+Open GUI at program start
+;
+MSG_EMULATE_BSDSOCKET_LIBRARY_NETWORK (31//)
+Emulate bsdsocket.library (network)
+;
+MSG_SYNCHRONIZE_AMIGA_CLOCK_WITH_SYSTEM_TIME (32//)
+Synchronize Amiga clock with system time
+;
+MSG_LOAD_CONFIGURATION (33//)
+Load configuration
+;
+MSG_SAVE_CONFIGURATION (34//)
+Save configuration
+;
+MSG_COULD_NOT_WRITE_CONFIGURATION_TO_S (35//)
+Could not write configuration to '%s'.
+;
+MSG_OWN_SCREEN (36//)
+Own screen
+;
+MSG_PUBLIC_SCREEN (37//)
+Public screen
+;
+MSG_ASK_AT_STARTUP (38//)
+Ask at startup
+;
+MSG_DOUBLE_LINES (39//)
+Double lines
+;
+MSG_SCANLINES (40//)
+Scanlines
+;
+MSG_NO (41//)
+No
+;
+MSG_SIMPLE (42//)
+Simple
+;
+MSG_SMART (43//)
+Smart
+;
+MSG_SCREEN (44//)
+Screen
+;
+MSG_SCREEN_TYPE (45//)
+Screen type:
+;
+MSG_PUBLIC_SCREEN_2 (46//)
+Public screen:
+;
+MSG_FULLSCREEN_AMIGA_MODES (47//)
+Fullscreen (Amiga modes)
+;
+MSG_FULLSCREEN_PICASSO96_MODES (48//)
+Fullscreen (Picasso96 modes)
+;
+MSG_RESOLUTION (49//)
+Resolution
+;
+MSG_WINDOW_WIDTH (50//)
+Window width:
+;
+MSG_WINDOW_HEIGHT (51//)
+Window height:
+;
+MSG_FULLSCREEN_WIDTH (52//)
+Fullscreen width:
+;
+MSG_FULLSCREEN_HEIGHT (53//)
+Fullscreen height:
+;
+MSG_APPEARANCE (54//)
+Appearance
+;
+MSG_LINE_MODE (55//)
+Line mode:
+;
+MSG_CENTER_HORIZONTALLY (56//)
+Center horizontally:
+;
+MSG_CENTER_VERTICALLY (57//)
+Center vertically:
+;
+MSG_COLOR_MODE (58//)
+Color mode:
+;
+MSG_EVERY_NTH_FRAME (59//)
+Every nth frame:
+;
+MSG_REFRESH_RATE_0_AUTO (60//)
+Refresh rate (0=auto):
+;
+MSG_OPTIONS (61//)
+Options
+;
+MSG_LORES_HALF_RESOLUTION (62//)
+Lores (half resolution)
+;
+MSG_CORRECT_ASPECT_RATIO (63//)
+Correct aspect ratio
+;
+MSG_SYNC_WITH_SCREEN (64//)
+Sync with screen
+;
+MSG_DITHERING_FEW_COLORS (65//)
+Dithering (few colors)
+;
+MSG_GRAYSCALE (66//)
+Grayscale
+;
+MSG_SHOW_LEDS_IN_PICTURE (67//)
+Show LEDs in picture
+;
+MSG_PLEASE_ENTER_A_PATH_FIRST (68//)
+Please enter a path first.
+;
+MSG_PLEASE_ENTER_A_VOLUME_NAME_FOR_THE_DRIVE (69//)
+Please enter a volume name for the drive.
+;
+MSG_COULD_NOT_ADD_UNIT_N_S (70//)
+Could not add unit:\n%s
+;
+MSG_COULD_NOT_CHANGE_UNIT_N_S (71//)
+Could not change unit:\n%s
+;
+MSG_SELECT_HARDFILE (72//)
+Select hardfile
+;
+MSG_SELECT_DIRECTORY_OR_HARDFILE (73//)
+Select directory or hardfile
+;
+MSG_UNITS (74//)
+Units
+;
+MSG_UNIT (75//)
+Unit
+;
+MSG_DEVICE_E_G_DH0 (76//)
+Device (e.g. DH0):
+;
+MSG_VOLUME_NAME (77//)
+Volume name:
+;
+MSG_PATH (78//)
+Path:
+;
+MSG_READ_ONLY (79//)
+Read only
+;
+MSG_SECTORS (80//)
+Sectors:
+;
+MSG_HEADS (81//)
+Heads:
+;
+MSG_RESERVED (82//)
+Reserved:
+;
+MSG_BLOCK_SIZE (83//)
+Block size:
+;
+MSG_BOOT_PRIORITY (84//)
+Boot priority:
+;
+MSG_ADD_DIRECTORY (85//)
+Add directory
+;
+MSG_ADD_HARDFILE (86//)
+Add hardfile
+;
+MSG_CHANGE (87//)
+Change
+;
+MSG_REMOVE (88//)
+Remove
+;
+MSG_MAXIMUM (89//)
+Maximum
+;
+MSG_ORIGINAL_AMIGA_SPEED (90//)
+Original (Amiga speed)
+;
+MSG_ECS_COMPLETE (91//)
+ECS complete
+;
+MSG_NONE (92//)
+None
+;
+MSG_SPRITES_ONLY (93//)
+Sprites only
+;
+MSG_SPRITES_PLAYFIELDS (94//)
+Sprites + playfields
+;
+MSG_FULL (95//)
+Full
+;
+MSG_NO_RAM (96//)
+No RAM
+;
+MSG_1_8_MB (97//)
+1.8 MB
+;
+MSG_OFF (98//)
+Off
+;
+MSG_CUSTOM_SETTINGS (99//)
+Custom settings
+;
+MSG_A1200_TURBO_CARD (100//)
+A1200 + turbo card
+;
+MSG_AMIGA_MODEL (101//)
+Amiga model
+;
+MSG_PRESET (102//)
+Preset:
+;
+MSG_TYPE (103//)
+Type:
+;
+MSG_SPEED (104//)
+Speed:
+;
+MSG_COMPATIBLE_CPU_MODE (105//)
+Compatible CPU mode
+;
+MSG_CYCLE_EXACT_CPU (106//)
+Cycle-exact CPU
+;
+MSG_CHIPSET (107//)
+Chipset
+;
+MSG_CHIPSET_2 (108//)
+Chipset:
+;
+MSG_COLLISION (109//)
+Collision:
+;
+MSG_RUN_BLITTER_IMMEDIATELY (110//)
+Run blitter immediately
+;
+MSG_CYCLE_EXACT_BLITTER (111//)
+Cycle-exact blitter
+;
+MSG_MEMORY (112//)
+Memory
+;
+MSG_GRAPHICS_CARD_P96 (113//)
+Graphics card (P96):
+;
+MSG_HARD_CACHE_FLUSH (114//)
+Hard cache flush
+;
+MSG_CONSTANT_JUMPS (115//)
+Constant jumps
+;
+MSG_KEYBOARD_NUMERIC_KEYPAD (116//)
+Keyboard: numeric keypad
+;
+MSG_KEYBOARD_CURSOR_SPACE (117//)
+Keyboard: cursor + space
+;
+MSG_KEYBOARD_T_F_H_B_ALT (118//)
+Keyboard: T/F/H/B + Alt
+;
+MSG_KEYBOARD_X_ARCADE_1 (119//)
+Keyboard: X-Arcade 1
+;
+MSG_KEYBOARD_X_ARCADE_2 (120//)
+Keyboard: X-Arcade 2
+;
+MSG_MOUSE (121//)
+Mouse
+;
+MSG_MOUSE_2 (122//)
+Mouse 2
+;
+MSG_NOT_ASSIGNED (123//)
+Not assigned
+;
+MSG_DANISH (124//)
+Danish
+;
+MSG_GERMAN (125//)
+German
+;
+MSG_SWEDISH (126//)
+Swedish
+;
+MSG_FRENCH (127//)
+French
+;
+MSG_ITALIAN (128//)
+Italian
+;
+MSG_SPANISH (129//)
+Spanish
+;
+MSG_CONTROLLER_PORTS (130//)
+Controller ports
+;
+MSG_PORT_0_MOUSE (131//)
+Port 0 (mouse):
+;
+MSG_PORT_1_JOYSTICK (132//)
+Port 1 (joystick):
+;
+MSG_KEYBOARD_AND_MOUSE (133//)
+Keyboard and mouse
+;
+MSG_KEYBOARD_LAYOUT (134//)
+Keyboard layout:
+;
+MSG_MOUSE_SPEED (135//)
+Mouse speed (%):
+;
+MSG_HIDE_MOUSE_POINTER_IN_EMULATOR_WINDOW (136//)
+Hide mouse pointer in emulator window
+;
+MSG_FLOPPY_DRIVES (137//)
+Floppy drives
+;
+MSG_EJECT (138//)
+Eject
+;
+MSG_FLOPPY_SPEED (139//)
+Floppy speed:
+;
+MSG_SELECT_KICKSTART_ROM (140//)
+Select Kickstart ROM
+;
+MSG_SELECT_EXTENDED_ROM (141//)
+Select extended ROM
+;
+MSG_SELECT_ROM_KEYFILE (142//)
+Select ROM keyfile
+;
+MSG_SELECT_DISK_IMAGE (143//)
+Select disk image
+;
+MSG_EMULATED_NO_OUTPUT (144//)
+Emulated (no output)
+;
+MSG_EXACT (145//)
+Exact
+;
+MSG_OUTPUT (146//)
+Output
+;
+MSG_MODE (147//)
+Mode:
+;
+MSG_CHANNELS (148//)
+Channels:
+;
+MSG_FREQUENCY (149//)
+Frequency:
+;
+MSG_ATTENUATION_0_LOUD (150//)
+Attenuation % (0=loud):
+;
+MSG_LATENCY_MS (151//)
+Latency (ms):
+;
+MSG_STEREO_SEPARATION_0_10 (152//)
+Stereo separation (0-10):
+;
+MSG_STEREO_MIX_DELAY (153//)
+Stereo mix delay:
+;
+MSG_FLOPPY_SOUNDS (154//)
+Floppy sounds
+;
+MSG_DF0_DRIVE_SOUNDS (155//)
+DF0 drive sounds
+;
+MSG_DF1_DRIVE_SOUNDS (156//)
+DF1 drive sounds
+;
+MSG_DF2_DRIVE_SOUNDS (157//)
+DF2 drive sounds
+;
+MSG_DF3_DRIVE_SOUNDS (158//)
+DF3 drive sounds
+;
+MSG_ATTENUATION (159//)
+Attenuation %:
+;
+MSG_NORMAL (160//)
+Normal
+;
+MSG_INTERPOLATION (161//)
+Interpolation:
+;
+MSG_KICKSTART (162//)
+Kickstart
+;
+MSG_IDLE_0_120 (163//)
+Idle (0-120):
+;
+MSG_CPU (164//)
+CPU
+;
+MSG_CACHE (165//)
+Cache:
+;
+MSG_JIT_COMPILER (166//)
+JIT compiler
+;
+MSG_HINT_START (167//)
+Start the emulation with the current settings.
+;
+MSG_HINT_PAUSE (168//)
+Pause the running emulation, or continue it.
+;
+MSG_HINT_RESET (169//)
+Reset the emulated Amiga, like pressing its reset button.
+;
+MSG_HINT_STOP (170//)
+Stop the emulation and return to the settings.
+;
+MSG_HINT_QUIT (171//)
+Quit E-UAE.
+;
+MSG_HINT_MEDIA_ROM (172//)
+Kickstart ROM image used by the emulated Amiga.
+;
+MSG_HINT_MEDIA_ROM_SEL (173//)
+Choose the Kickstart ROM file.
+;
+MSG_HINT_MEDIA_EXT (174//)
+Optional extended ROM. The CD32 needs its 512 KB extended ROM here - or use the 1 MB CD32 ROM (Kickstart and extended ROM in one file) as Kickstart and leave this empty.
+;
+MSG_HINT_MEDIA_EXT_SEL (175//)
+Choose the extended ROM file.
+;
+MSG_HINT_MEDIA_KEY (176//)
+Keyfile for encrypted ROM images (Cloanto Amiga Forever).
+;
+MSG_HINT_MEDIA_KEY_SEL (177//)
+Choose the keyfile.
+;
+MSG_HINT_MEDIA_DFTYPE (178//)
+Type of this floppy drive. Off disables the drive.
+;
+MSG_HINT_MEDIA_DFFILE (179//)
+Disk image inserted in this drive: ADF, ADZ or DMS, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
+;
+MSG_HINT_MEDIA_DFSEL (180//)
+Choose a disk image for this drive.
+;
+MSG_HINT_MEDIA_DFEJECT (181//)
+Eject the disk from this drive.
+;
+MSG_HINT_MEDIA_FLOPPYSPEED (182//)
+Floppy drive speed. Turbo loads as fast as possible, but some software needs the original speed.
+;
+MSG_HINT_HARDWARE_MODEL (183//)
+Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page.
+;
+MSG_HINT_HARDWARE_CPU (184//)
+Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_SPEED (185//)
+Maximum runs as fast as the host allows. Original keeps the speed of a real Amiga.
+;
+MSG_HINT_HARDWARE_IDLE (186//)
+Gives CPU time back to the system while the Amiga is idle. 0 = off; otherwise E-UAE sleeps 1 ms after every n raster lines in which the Amiga waits, so smaller values save more (e.g. 30-60). Only works with CPU speed Maximum.
+;
+MSG_HINT_HARDWARE_COMPAT (187//)
+More compatible, but slower CPU emulation. Needed by some games. Not available while the JIT compiler is on.
+;
+MSG_HINT_HARDWARE_CYCLEEXACT (188//)
+Cycle-exact timing for demanding demos and games. Very slow. Fully cycle-exact only for the 68000; with a 68020 or higher only chip RAM and interrupt timing are exact. Not available while the JIT compiler is on.
+;
+MSG_HINT_HARDWARE_CHIPSET (189//)
+Chipset to emulate: OCS (A500), ECS (A500+, A600) or AGA (A1200, A4000).
+;
+MSG_HINT_HARDWARE_COLLISION (190//)
+Which sprite and playfield collisions are detected. Higher levels are more accurate but slower.
+;
+MSG_HINT_HARDWARE_NTSC (191//)
+Use NTSC video timing (60 Hz) instead of PAL (50 Hz).
+;
+MSG_HINT_HARDWARE_IMMBLITS (192//)
+Run blitter operations immediately instead of cycle by cycle. Faster, slightly less compatible.
+;
+MSG_HINT_HARDWARE_BLITCYCLE (193//)
+Cycle-exact blitter. Needed by some demos, but slower.
+;
+MSG_HINT_HARDWARE_CHIP (194//)
+Chip RAM size. Chip RAM is shared by the CPU and the graphics and sound hardware.
+;
+MSG_HINT_HARDWARE_SLOW (195//)
+Slow RAM (the trapdoor memory expansion of the A500).
+;
+MSG_HINT_HARDWARE_FAST (196//)
+Fast RAM (Zorro II) for the CPU. Not available with more than 2 MB Chip RAM.
+;
+MSG_HINT_HARDWARE_Z3 (197//)
+Zorro III Fast RAM. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_GFX (198//)
+Memory of the emulated Picasso96 graphics card. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_JITCACHE (199//)
+Size of the JIT translation cache. Off disables the JIT compiler. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_JITHARD (200//)
+When the Amiga flushes its CPU cache, throw away all translated code (safe, slower). Off: keep the code and translate again only blocks whose memory has changed (checksum test).
+;
+MSG_HINT_HARDWARE_JITCONST (201//)
+Optimization for jumps with fixed targets. Can be faster, but may reduce compatibility.
+;
+MSG_HINT_HARDDISK_LIST (202//)
+Mounted drives and directories. Select an entry to edit it.
+;
+MSG_HINT_HARDDISK_DEVNAME (203//)
+Amiga device name of the drive, for example DH0.
+;
+MSG_HINT_HARDDISK_VOLNAME (204//)
+Volume name shown on the Amiga side.
+;
+MSG_HINT_HARDDISK_PATH (205//)
+Host directory or hardfile that backs this drive.
+;
+MSG_HINT_HARDDISK_PATH_SEL (206//)
+Choose the directory or hardfile with a file requester.
+;
+MSG_HINT_HARDDISK_READONLY (207//)
+Mount read-only. The Amiga cannot change anything on this drive.
+;
+MSG_HINT_HARDDISK_SECTORS (208//)
+Sectors per track (hardfiles only).
+;
+MSG_HINT_HARDDISK_SURFACES (209//)
+Number of heads (hardfiles only).
+;
+MSG_HINT_HARDDISK_RESERVED (210//)
+Reserved blocks at the start of the hardfile.
+;
+MSG_HINT_HARDDISK_BLOCKSIZE (211//)
+Block size in bytes (normally 512).
+;
+MSG_HINT_HARDDISK_BOOTPRI (212//)
+Boot priority. The drive with the highest value is booted first.
+;
+MSG_HINT_HARDDISK_ADD_DIR (213//)
+Add a host directory as a virtual drive.
+;
+MSG_HINT_HARDDISK_ADD_HF (214//)
+Add a hardfile (disk image) as a drive.
+;
+MSG_HINT_HARDDISK_CHANGE (215//)
+Apply the edited values to the selected entry.
+;
+MSG_HINT_HARDDISK_REMOVE (216//)
+Remove the selected entry from the list.
+;
+MSG_HINT_DISPLAY_SCREENTYPE (217//)
+Where the emulation opens: on its own screen, on a public screen such as Workbench, or ask at startup.
+;
+MSG_HINT_DISPLAY_PUBSCREEN (218//)
+Name of the public screen the emulator window opens on.
+;
+MSG_HINT_DISPLAY_AFULL (219//)
+Open an own screen for the Amiga display instead of a window, with the fullscreen width and height.
+;
+MSG_HINT_DISPLAY_PFULL (220//)
+Open an own screen while the Amiga shows a Picasso96 (RTG) screen. When it switches back, the setting for Amiga modes applies again.
+;
+MSG_HINT_DISPLAY_WIN_W (221//)
+Width of the emulator window in pixels.
+;
+MSG_HINT_DISPLAY_WIN_H (222//)
+Height of the emulator window in pixels.
+;
+MSG_HINT_DISPLAY_FS_W (223//)
+Width of the fullscreen mode in pixels.
+;
+MSG_HINT_DISPLAY_FS_H (224//)
+Height of the fullscreen mode in pixels.
+;
+MSG_HINT_DISPLAY_LINEMODE (225//)
+How lines are drawn. Double lines fill the full window height; Scanlines leave gaps like a CRT.
+;
+MSG_HINT_DISPLAY_XCENTER (226//)
+Center the picture horizontally in the window.
+;
+MSG_HINT_DISPLAY_YCENTER (227//)
+Center the picture vertically in the window.
+;
+MSG_HINT_DISPLAY_COLOR (228//)
+Color depth of the emulated display.
+;
+MSG_HINT_DISPLAY_FRAMERATE (229//)
+Draw only every nth frame. Higher values save CPU time.
+;
+MSG_HINT_DISPLAY_REFRESH (230//)
+Refresh rate for fullscreen modes in Hz (0 = automatic).
+;
+MSG_HINT_DISPLAY_LORES (231//)
+Render at half the horizontal resolution. Faster, but less sharp.
+;
+MSG_HINT_DISPLAY_ASPECT (232//)
+Correct the pixel aspect ratio of the emulated display.
+;
+MSG_HINT_DISPLAY_VSYNC (233//)
+Synchronize drawing with the screen refresh to avoid tearing.
+;
+MSG_HINT_DISPLAY_DITHER (234//)
+Reduce banding when the display has only a few colors.
+;
+MSG_HINT_DISPLAY_GREY (235//)
+Show the picture in grayscale.
+;
+MSG_HINT_DISPLAY_LEDS (236//)
+Show the power and drive LEDs inside the picture.
+;
+MSG_HINT_SOUND_MODE (237//)
+Off: no sound. Emulated: the sound chip runs but nothing is played. Normal and Exact play sound; Exact is more precise but slower.
+;
+MSG_HINT_SOUND_CHANNELS (238//)
+Mono or stereo sound output.
+;
+MSG_HINT_SOUND_FREQ (239//)
+Sample rate of the sound output. Higher means better quality but more CPU load.
+;
+MSG_HINT_SOUND_INTERPOL (240//)
+Smooths the sound. Sinc has the highest quality but needs the most CPU time.
+;
+MSG_HINT_SOUND_VOLUME (241//)
+Lowers the output volume in percent. 0 means full volume.
+;
+MSG_HINT_SOUND_LATENCY (242//)
+Size of the sound buffer in milliseconds. Small values react faster but may crackle.
+;
+MSG_HINT_SOUND_SEPARATION (243//)
+Stereo separation from 0 to 10.
+;
+MSG_HINT_SOUND_MIXDELAY (244//)
+Stereo mix delay (0 = off).
+;
+MSG_HINT_SOUND_CLICK (245//)
+Play floppy drive sounds (clicks) for this drive.
+;
+MSG_HINT_SOUND_CLICKVOL (246//)
+Volume reduction for the drive sounds in percent.
+;
+MSG_HINT_INPUT_PORT0 (247//)
+Device that controls Amiga port 0 (normally the mouse).
+;
+MSG_HINT_INPUT_PORT1 (248//)
+Device that controls Amiga port 1 (normally the joystick). With the CD32 Akiko chip it is a CD32 pad: joystick buttons 1-7 are red, blue, yellow, green, forward, reverse and play.
+;
+MSG_HINT_INPUT_KBDLANG (249//)
+Keyboard layout of the emulated Amiga keyboard.
+;
+MSG_HINT_INPUT_MOUSESPEED (250//)
+Mouse sensitivity in percent.
+;
+MSG_HINT_INPUT_HIDECURSOR (251//)
+Hide the system mouse pointer while it is inside the emulator window.
+;
+MSG_HINT_CONFIG_DESC (252//)
+Free-text description saved with the configuration.
+;
+MSG_HINT_CONFIG_LOAD (253//)
+Load a configuration file and apply it.
+;
+MSG_HINT_CONFIG_SAVE (254//)
+Save the current settings to the current configuration file.
+;
+MSG_HINT_CONFIG_SAVEAS (255//)
+Save the current settings under a new file name.
+;
+MSG_HINT_CONFIG_STATE_LOAD (256//)
+Load a saved emulation state (savestate).
+;
+MSG_HINT_CONFIG_STATE_SAVE (257//)
+Save the state of the running emulation to a file.
+;
+MSG_HINT_CONFIG_STARTGUI (258//)
+Open this settings window every time E-UAE starts.
+;
+MSG_HINT_CONFIG_BSDSOCKET (259//)
+Provide bsdsocket.library so emulated Amiga programs can use the host network.
+;
+MSG_HINT_CONFIG_TODHACK (260//)
+Keep the Amiga clock in sync with the system time.
+;
+MSG_SC_261 (261//)
+Shortcuts
+;
+MSG_SC_262 (262//)
+Action
+;
+MSG_SC_263 (263//)
+Shortcut
+;
+MSG_SC_264 (264//)
+Selected shortcut
+;
+MSG_SC_265 (265//)
+Ctrl
+;
+MSG_SC_266 (266//)
+Left Alt
+;
+MSG_SC_267 (267//)
+Right Alt
+;
+MSG_SC_268 (268//)
+Left Amiga
+;
+MSG_SC_269 (269//)
+Right Amiga
+;
+MSG_SC_270 (270//)
+Left Shift
+;
+MSG_SC_271 (271//)
+Right Shift
+;
+MSG_SC_272 (272//)
+Key:
+;
+MSG_SC_273 (273//)
+Apply
+;
+MSG_SC_274 (274//)
+Default
+;
+MSG_SC_275 (275//)
+All defaults
+;
+MSG_SC_276 (276//)
+Could not write the hotkeys file.
+;
+MSG_SC_277 (277//)
+This combination is already used by: %s
+;
+MSG_SC_278 (278//)
+Please select at least one modifier key (Ctrl, Alt, Amiga or Shift).
+;
+MSG_SC_279 (279//)
+At most three modifier keys can be combined.
+;
+MSG_SC_280 (280//)
+Quit E-UAE
+;
+MSG_SC_281 (281//)
+Soft reset
+;
+MSG_SC_282 (282//)
+Hard reset
+;
+MSG_SC_283 (283//)
+Enter debugger
+;
+MSG_SC_284 (284//)
+Toggle fullscreen
+;
+MSG_SC_285 (285//)
+Toggle mouse grab
+;
+MSG_SC_286 (286//)
+Inhibit screen drawing
+;
+MSG_SC_287 (287//)
+Screenshot
+;
+MSG_SC_288 (288//)
+Switch sound interpolation
+;
+MSG_SC_289 (289//)
+Increase frame skip
+;
+MSG_SC_290 (290//)
+Decrease frame skip
+;
+MSG_SC_291 (291//)
+Insert disk in DF0
+;
+MSG_SC_292 (292//)
+Insert disk in DF1
+;
+MSG_SC_293 (293//)
+Insert disk in DF2
+;
+MSG_SC_294 (294//)
+Insert disk in DF3
+;
+MSG_SC_295 (295//)
+Eject disk from DF0
+;
+MSG_SC_296 (296//)
+Eject disk from DF1
+;
+MSG_SC_297 (297//)
+Eject disk from DF2
+;
+MSG_SC_298 (298//)
+Eject disk from DF3
+;
+MSG_SC_299 (299//)
+Load savestate (requester)
+;
+MSG_SC_300 (300//)
+Save savestate (requester)
+;
+MSG_SC_301 (301//)
+Load state slot 0
+;
+MSG_SC_302 (302//)
+Load state slot 1
+;
+MSG_SC_303 (303//)
+Load state slot 2
+;
+MSG_SC_304 (304//)
+Load state slot 3
+;
+MSG_SC_305 (305//)
+Load state slot 4
+;
+MSG_SC_306 (306//)
+Load state slot 5
+;
+MSG_SC_307 (307//)
+Load state slot 6
+;
+MSG_SC_308 (308//)
+Load state slot 7
+;
+MSG_SC_309 (309//)
+Load state slot 8
+;
+MSG_SC_310 (310//)
+Load state slot 9
+;
+MSG_SC_311 (311//)
+Save state slot 0
+;
+MSG_SC_312 (312//)
+Save state slot 1
+;
+MSG_SC_313 (313//)
+Save state slot 2
+;
+MSG_SC_314 (314//)
+Save state slot 3
+;
+MSG_SC_315 (315//)
+Save state slot 4
+;
+MSG_SC_316 (316//)
+Save state slot 5
+;
+MSG_SC_317 (317//)
+Save state slot 6
+;
+MSG_SC_318 (318//)
+Save state slot 7
+;
+MSG_SC_319 (319//)
+Save state slot 8
+;
+MSG_SC_320 (320//)
+Save state slot 9
+;
+MSG_SC_321 (321//)
+Freeze button (cartridge)
+;
+MSG_SC_322 (322//)
+Hotkeys of the emulator window. Select an entry to change its key combination.
+;
+MSG_SC_323 (323//)
+Modifier keys of this shortcut. Hold them down in any order, then press the key.
+;
+MSG_SC_324 (324//)
+The key that triggers the action together with the modifier keys.
+;
+MSG_SC_325 (325//)
+Use the selected modifier keys and key for this action. Takes effect at once and is saved.
+;
+MSG_SC_326 (326//)
+Restore the default shortcut of the selected action.
+;
+MSG_SC_327 (327//)
+Restore the default shortcuts of all actions.
+;
+MSG_IDE_CONTROLLER_GAYLE (328//)
+IDE controller (Gayle)
+;
+MSG_IDE_CONTROLLER (329//)
+Controller:
+;
+MSG_IDE_GAYLE (330//)
+A600/A1200 (Gayle)
+;
+MSG_IDE_A4000 (331//)
+A4000 IDE
+;
+MSG_IDE_MASTER_HARDFILE (332//)
+Master hardfile:
+;
+MSG_IDE_SLAVE_HARDFILE (333//)
+Slave hardfile:
+;
+MSG_SELECT_IDE_HARDFILE (334//)
+Select IDE hardfile
+;
+MSG_HINT_HARDDISK_IDE (335//)
+Emulated IDE controller: the Gayle chip of the A600/A1200 or the A4000 IDE interface. The Kickstart's own scsi.device uses it, so no extra driver is needed. Needs a matching Kickstart and chipset.
+;
+MSG_HINT_HARDDISK_IDE_MASTER (336//)
+Hardfile (disk image) on the IDE master drive. Partition it with HDToolBox, or use a hardfile with RDB.
+;
+MSG_HINT_HARDDISK_IDE_SLAVE (337//)
+Hardfile (disk image) on the IDE slave drive. Leave empty for no second drive.
+;
+MSG_HINT_HARDDISK_IDE_SEL (338//)
+Choose the IDE hardfile with a file requester.
+;
+MSG_HINT_HARDDISK_IDE_RO (339//)
+Open the IDE hardfile read-only.
+;
+MSG_COLUMN_CONTROLLER (340//)
+Controller
+;
+MSG_COLUMN_DRIVE (341//)
+Drive
+;
+MSG_CTRL_UAE_SHORT (342//)
+UAE
+;
+MSG_CTRL_UAE (343//)
+UAE (uaehf.device)
+;
+MSG_CTRL_IDE_MASTER (344//)
+IDE master
+;
+MSG_CTRL_IDE_SLAVE (345//)
+IDE slave
+;
+MSG_IDE_INTERFACE (346//)
+IDE interface:
+;
+MSG_RDB_CHECK (347//)
+Hardfile has RDB (partition table)
+;
+MSG_ERR_IDE_MASTER_BUSY (348//)
+The IDE master slot is already in use.
+;
+MSG_ERR_IDE_SLAVE_BUSY (349//)
+The IDE slave slot is already in use.
+;
+MSG_IDE_OFF (350//)
+IDE interface is off
+;
+MSG_HINT_HARDDISK_CTRL (351//)
+Controller the drive is attached to. UAE: UAE's own uaehf.device, no Kickstart driver needed. IDE: the emulated IDE interface, served by the Kickstart's own scsi.device (one master and one slave, hardfile with RDB).
+;
+MSG_HINT_HARDDISK_RDB (352//)
+The hardfile contains a partition table (RDB). The Amiga reads the partitions from it; geometry, block size and names come from the image. Detected automatically when you choose the file.
+;
+MSG_NEW_DISK (353//)
+New...
+;
+MSG_CREATE_BLANK_DISK_IMAGE (354//)
+Create blank disk image
+;
+MSG_ERR_FILE_EXISTS_REPLACE (355//)
+The file '%s' already exists.\nReplace it?
+;
+MSG_YES_NO (356//)
+Yes|No
+;
+MSG_ERR_CREATE_DISK (357//)
+Could not create the disk image '%s'.
+;
+MSG_HINT_MEDIA_DFNEW (358//)
+Create a new blank disk image and insert it into this drive. 3.5\" DD and HD drives get a formatted (OFS) disk, 5.25\" drives an unformatted one.
+;
+MSG_ERR_DISK_IN_USE (359//)
+The disk image '%s' is inserted in a drive. Eject it first.
+;
+MSG_NEW_HARDFILE (360//)
+New hardfile
+;
+MSG_SIZE_MB (361//)
+Size (MB):
+;
+MSG_FILE_SYSTEM (362//)
+File system:
+;
+MSG_CREATE_DOTS (363//)
+Create...
+;
+MSG_RDB_HDTOOLBOX (364//)
+RDB (partition with HDToolBox)
+;
+MSG_CREATE_HARDFILE (365//)
+Create hardfile
+;
+MSG_ERR_HDF_SIZE (366//)
+Please enter a size between 1 and %ld MB.
+;
+MSG_ERR_HDF_IN_USE (367//)
+The hardfile '%s' is in use. Remove it from the list first.
+;
+MSG_ERR_HDF_CREATE (368//)
+Could not create the hardfile '%s'.
+;
+MSG_HDF_CREATED (369//)
+Hardfile created: %s\n%lu MB, %lu sectors, %lu heads, %lu cylinders.\nChoose the controller and click 'Add hardfile'.
+;
+MSG_HINT_HARDDISK_NEWSIZE (370//)
+Size of the new hardfile in MB.
+;
+MSG_HINT_HARDDISK_NEWFS (371//)
+File system the new hardfile is meant for. Its DosType is written to the first 4 bytes, the Amiga still has to format it. RDB: empty disk for partitioning with HDToolBox (also for the IDE controller).
+;
+MSG_HINT_HARDDISK_NEWCREATE (372//)
+Create an empty hardfile (like make_hdf) and add it as a drive at once: with the controller chosen above, UAE drives get the next free name (DH0, DH1, ...) and a matching geometry.
+;
+MSG_HD_373 (373//)
+, read only
+;
+MSG_HD_374 (374//)
+Add a hardfile (hard disk image), or create a new one.
+;
+MSG_HD_375 (375//)
+Add a host directory as an Amiga drive.
+;
+MSG_HD_376 (376//)
+Add directory...
+;
+MSG_HD_377 (377//)
+Add hardfile...
+;
+MSG_HD_378 (378//)
+Advanced
+;
+MSG_HD_379 (379//)
+Amiga device name of the drive, for example DH0. Filled in automatically.
+;
+MSG_HD_380 (380//)
+Apply the settings.
+;
+MSG_HD_381 (381//)
+Cancel
+;
+MSG_HD_382 (382//)
+Change the settings of the selected drive.
+;
+MSG_HD_383 (383//)
+Choose the directory with a file requester.
+;
+MSG_HD_384 (384//)
+Choose the hardfile with a file requester.
+;
+MSG_HD_385 (385//)
+Close the window without changes.
+;
+MSG_HD_386 (386//)
+Controller the drive is attached to. UAE: UAE's own uaehf.device, no Kickstart driver needed. IDE: the emulated IDE interface of the A600/A1200 (Gayle) or A4000, served by the Kickstart's own scsi.device. Both IDE drives share one interface.
+;
+MSG_HD_387 (387//)
+Create an empty hardfile (like make_hdf) and use it for this drive, with a matching geometry.
+;
+MSG_HD_388 (388//)
+Device
+;
+MSG_HD_389 (389//)
+Device:
+;
+MSG_HD_390 (390//)
+Directory
+;
+MSG_HD_391 (391//)
+Drives of the emulated Amiga. Double-click an entry to edit it.
+;
+MSG_HD_392 (392//)
+Edit directory
+;
+MSG_HD_393 (393//)
+Edit hardfile
+;
+MSG_HD_394 (394//)
+Edit...
+;
+MSG_HD_395 (395//)
+File not found.
+;
+MSG_HD_396 (396//)
+Hardfile
+;
+MSG_HD_397 (397//)
+Host directory that appears as an Amiga drive.
+;
+MSG_HD_398 (398//)
+Host file that holds the hard disk image.
+;
+MSG_HD_399 (399//)
+IDE A600/A1200 (Gayle)
+;
+MSG_HD_400 (400//)
+Info:
+;
+MSG_HD_401 (401//)
+Master
+;
+MSG_HD_402 (402//)
+New image
+;
+MSG_HD_403 (403//)
+No hardfile chosen.
+;
+MSG_HD_404 (404//)
+Number of heads (hardfiles without RDB only).
+;
+MSG_HD_405 (405//)
+Path
+;
+MSG_HD_406 (406//)
+Please choose a hardfile first.
+;
+MSG_HD_407 (407//)
+Position of the drive on the IDE interface.
+;
+MSG_HD_408 (408//)
+Remove the selected drive from the list. The file itself is not deleted.
+;
+MSG_HD_409 (409//)
+Sectors per track (hardfiles without RDB only).
+;
+MSG_HD_410 (410//)
+Select directory
+;
+MSG_HD_411 (411//)
+Size
+;
+MSG_HD_412 (412//)
+Size of the hardfile and whether it contains a partition table (RDB).
+;
+MSG_HD_413 (413//)
+Slave
+;
+MSG_HD_414 (414//)
+The directory '%s' is already in the list.
+;
+MSG_HD_415 (415//)
+Type
+;
+MSG_HD_416 (416//)
+Volume name shown on the Amiga side. Taken from the directory name if left empty.
+;
+MSG_HD_417 (417//)
+no partition table (RDB)
+;
+MSG_HD_418 (418//)
+partition table (RDB) found
+;
+MSG_DISP_419 (419//)
+Graphics card (RTG)
+;
+MSG_DISP_420 (420//)
+Hardware mouse pointer
+;
+MSG_DISP_421 (421//)
+Vertical blank interrupt
+;
+MSG_DISP_422 (422//)
+The graphics card shows the mouse pointer itself (hardware sprite): no flicker and less work for Picasso96. Needs a 16 or 32 bit host screen.
+;
+MSG_DISP_423 (423//)
+The graphics card raises an interrupt at every vertical blank, like real cards. Some programs need it for smooth scrolling.
+;
+MSG_CD_424 (424//)
+CD:
+;
+MSG_CD_425 (425//)
+Unit 1
+;
+MSG_CD_426 (426//)
+Unit 2
+;
+MSG_CD_427 (427//)
+Unit 3
+;
+MSG_CD_428 (428//)
+Unit 0:
+;
+MSG_CD_429 (429//)
+Unit 1:
+;
+MSG_CD_430 (430//)
+Unit 2:
+;
+MSG_CD_431 (431//)
+Unit 3:
+;
+MSG_CD_432 (432//)
+CUE sheet
+;
+MSG_CD_433 (433//)
+ISO image
+;
+MSG_CD_434 (434//)
+uaescsi.device, unit %d
+;
+MSG_CD_435 (435//)
+(no disc)
+;
+MSG_CD_436 (436//)
+No disc - the drive stays empty.
+;
+MSG_CD_437 (437//)
+Unit %d of uaescsi.device is already used by another CD-ROM drive.
+;
+MSG_CD_438 (438//)
+The CD image '%s' was not found.
+;
+MSG_CD_439 (439//)
+Select CD image
+;
+MSG_CD_440 (440//)
+Where the CD-ROM drive is attached. uaescsi.device: UAE's own device, unit 0, works with every Kickstart; the CD file system needs a mount entry with Device = uaescsi.device, Unit = 0. IDE: an ATAPI drive at the emulated IDE interface of the A600/A1200 (Gayle) or A4000, like real hardware; needs a scsi.device with ATAPI support (Kickstart 3.1.4 / 3.2 or a patched driver). Both IDE drives share one interface. CD32 (Akiko): the drive of the Amiga CD32; needs the CD32 Kickstart and extended ROM, which boot the CD themselves (CD32 model preset on the Hardware page).
+;
+MSG_CD_441 (441//)
+CD image in the drive: an ISO file or a CUE sheet with its BIN files (also with audio tracks). Leave empty for a drive without a disc. The disc can be changed on the Media page, also while the emulation is running.
+;
+MSG_CD_442 (442//)
+Choose the CD image with a file requester.
+;
+MSG_CD_443 (443//)
+Size and type of the CD image.
+;
+MSG_CD_444 (444//)
+CD-ROM drive
+;
+MSG_CD_445 (445//)
+uaescsi.device:
+;
+MSG_CD_446 (446//)
+Image:
+;
+MSG_CD_447 (447//)
+Add CD-ROM drive
+;
+MSG_CD_448 (448//)
+Edit CD-ROM drive
+;
+MSG_CD_449 (449//)
+Add CD-ROM drive...
+;
+MSG_CD_450 (450//)
+All %d CD-ROM drives are in use.
+;
+MSG_CD_451 (451//)
+Add the CD-ROM drive for ISO and CUE/BIN images, at uaescsi.device or as ATAPI drive at the IDE interface. If there is one already, it is edited.
+;
+MSG_CD_452 (452//)
+CD-ROM drives
+;
+MSG_CD_453 (453//)
+CD image (ISO or CUE sheet) in the CD-ROM drive. Can be changed while the emulation is running. The CD-ROM drive is added on the Hard disks page.
+;
+MSG_CD_454 (454//)
+Choose a CD image for this drive.
+;
+MSG_CD_455 (455//)
+Eject the CD from this drive.
+;
+MSG_CD_456 (456//)
+Boot
+;
+MSG_CD_457 (457//)
+Boot from CD (mount as CD0:)
+;
+MSG_CD_458 (458//)
+E-UAE reads the ISO 9660 file system of the disc itself and mounts the drive as CD0: - it is in the boot menu and can be booted from with any Kickstart, no CD file system or mount entry needed on the Amiga side. A disc change while the emulation runs is seen by new file accesses, the volume name stays until the next reset.
+;
+MSG_CD_459 (459//)
+Boot priority of CD0:. The drive with the highest value is booted first; with -127 the CD is only booted when chosen in the boot menu (or when nothing else is bootable).
+;
+MSG_SET_460 (460//)
+Project
+;
+MSG_SET_461 (461//)
+About...
+;
+MSG_SET_462 (462//)
+Settings...
+;
+MSG_SET_463 (463//)
+Folders
+;
+MSG_SET_464 (464//)
+Log
+;
+MSG_SET_465 (465//)
+Log output:
+;
+MSG_SET_466 (466//)
+E-UAE settings
+;
+MSG_SET_467 (467//)
+Kickstart ROMs:
+;
+MSG_SET_468 (468//)
+Floppy images:
+;
+MSG_SET_469 (469//)
+Hardfiles:
+;
+MSG_SET_470 (470//)
+CD images:
+;
+MSG_SET_471 (471//)
+Configurations:
+;
+MSG_SET_472 (472//)
+Savestates:
+;
+MSG_SET_473 (473//)
+Window
+;
+MSG_SET_474 (474//)
+File (PROGDIR:E-UAE.log)
+;
+MSG_SET_475 (475//)
+Folder for Kickstart ROM images. The file requesters of the GUI start here when no file is chosen yet.
+;
+MSG_SET_476 (476//)
+Folder for floppy disk images (ADF, DMS, ...).
+;
+MSG_SET_477 (477//)
+Folder for hardfiles and directories used as drives.
+;
+MSG_SET_478 (478//)
+Folder for CD images (ISO, CUE/BIN).
+;
+MSG_SET_479 (479//)
+Folder for configuration files (Load / Save as).
+;
+MSG_SET_480 (480//)
+Folder for savestates.
+;
+MSG_SET_481 (481//)
+Choose the folder with a requester.
+;
+MSG_SET_482 (482//)
+Where the E-UAE log goes. Off: no output window. Window: the output window as before (takes effect at the next start). File: PROGDIR:E-UAE.log, new at every start - useful for bug reports.
+;
+MSG_SET_483 (483//)
+Save the settings and close the window.
+;
+MSG_SET_484 (484//)
+AmigaOS 4.1 PPC with JIT, built
+;
+MSG_SET_485 (485//)
+E-UAE by Richard Drummond, based on UAE by Bernd Schmidt and WinUAE by Toni Wilen.
+;
+MSG_SET_486 (486//)
+ReAction GUI and extensions (v1 - v17) by Falke_34.
+;
+MSG_SET_487 (487//)
+Free software under the GNU General Public License.
+;
+MSG_SET_488 (488//)
+About E-UAE
+;
+MSG_SET_489 (489//)
+Could not save the settings to '%s'.
+;
+MSG_SET_490 (490//)
+PowerPC JIT compiler by \xC1lmos Rajnai.
+;
+MSG_SET_491 (491//)
+AmigaOS 4 updates by Kjetil Hvalstrand, Fredrik Wikstrom and Josef Wegner.
+;
+MSG_SET_492 (492//)
+CD32 (AGA, 2 MB, Akiko)
+;
+MSG_SET_493 (493//)
+CD32 (Akiko)
+;
+MSG_SET_494 (494//)
+CD32 Akiko chip (CD drive, C2P, NVRAM)
+;
+MSG_SET_495 (495//)
+The custom chip of the Amiga CD32: CD-ROM controller (the CD drive is attached to it), chunky-to-planar converter and 1 KB NVRAM for game saves (file PROGDIR:cd32.nvr). Needs AGA and the CD32 Kickstart + extended ROM. The joystick in Amiga port 1 becomes a CD32 pad.
+;
+MSG_SET_496 (496//)
+Please choose a Kickstart ROM on the Media page.
+;
+MSG_SET_497 (497//)
+Cartridge:
+;
+MSG_SET_498 (498//)
+Select cartridge ROM
+;
+MSG_SET_499 (499//)
+Freezer cartridge ROM: Action Replay 1, 2 or 3 (a dump of the real cartridge) or HRTMon. Ctrl+Alt+F (Shortcuts page) freezes the running program and opens the cartridge's monitor: look at and change memory, trainers (infinite lives), rip graphics. Empty = no cartridge. Action Replay 2/3 are made for 68000 Amigas; HRTMon also works with 68020 and higher.
+;
+MSG_SET_500 (500//)
+Choose the cartridge ROM file.
+;
+MSG_SET_501 (501//)
+Iconify the GUI after Start
+;
+MSG_SET_502 (502//)
+When the emulation is started, the GUI window becomes an icon on the Workbench (double-click it to get the window back). The window can also be iconified at any time with the iconify gadget in its title bar.
+;
+MSG_SET_503 (503//)
+Middle mouse button releases the pointer
+;
+MSG_SET_504 (504//)
+In a window on the Workbench, the middle mouse button gives the pointer back to the Workbench and makes the E-UAE window inactive. Click into the window to continue. The Amiga then gets no middle button; in full screen it always does.
+;

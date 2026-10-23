@@ -11,7 +11,7 @@ DIST_SUBDIRS = \
 	gfx-amigaos gfx-beos gfx-x11 gfx-sdl gfx-curses gfx-svga \
 	sd-none sd-alsa sd-amigaos sd-beos sd-sdl sd-solaris sd-uss \
 	jd-none jd-amigainput jd-amigaos jd-beos jd-linuxold jd-sdl \
-	gui-none gui-beos gui-cocoa gui-gtk gui-muirexx \
+	gui-none gui-beos gui-cocoa gui-gtk gui-muirexx gui-reaction \
 	od-generic od-amiga od-beos od-linux od-macosx od-win32 \
 	td-none td-amigaos td-beos td-posix td-sdl td-win32 \
 	keymap \
@@ -73,8 +73,9 @@ dist_noinst_DATA = \
 
 noinst_HEADERS = \
 	include/akiko.h		include/ar.h		\
+	include/gayle.h		\
 	include/audio.h		include/autoconf.h	\
-	include/blitter.h	include/blkdev.h	\
+	include/blitter.h	include/blkdev.h	include/cdimage.h	include/filesys_cdfs.h	\
 	include/bsdsocket.h 	include/caps.h		\
 	include/catweasel.h     include/cdrom.h         \
 	include/cia.h		                        \
@@ -115,6 +116,7 @@ noinst_HEADERS = \
 	include/version.h                               \
 	include/writelog.h \
 	include/xwin.h		include/zfile.h		\
+	include/lha.h		include/lha_macro.h	\
 	targets/t-amiga.h	targets/t-beos.h        \
 	targets/t-unix.h	targets/t-win32.h
 
@@ -130,9 +132,11 @@ uae_SOURCES = \
 	main.c newcpu.c memory.c events.c custom.c serial.c cia.c \
 	blitter.c autoconf.c traps.c ersatz.c keybuf.c expansion.c \
 	zfile.c cfgfile.c picasso96.c inputdevice.c \
+	archive_lha.c archive_lzx.c lha_crcio.c lha_dhuf.c lha_header.c lha_huf.c \
+	lha_larc.c lha_maketbl.c lha_shuf.c lha_slide.c lha_util.c \
 	gfxutil.c audio.c sinctable.c drawing.c \
 	native2amiga.c disk.c crc32.c savestate.c unzip.c \
-	uaeexe.c uaelib.c fdi2raw.c hotkeys.c \
+	uaeexe.c uaelib.c fdi2raw.c hotkeys.c gayle.c \
 	ar.c driveclick.c enforcer.c misc.c \
 	missing.c readcpu.c
 
@@ -145,7 +149,7 @@ EXTRA_uae_SOURCES = \
 	hardfile_unix.c scsi-none.c \
 	ppc_disasm.c scsiemul.c svgancui.c tui.c \
 	blkdev-libscg.c filesys_unix.c \
-	akiko.c ar.c blkdev.c blitops.c \
+	akiko.c ar.c blkdev.c blkdev-cdimage.c filesys_cdfs.c blitops.c \
 	writelog.c
 
 uae_DEPENDENCIES = \

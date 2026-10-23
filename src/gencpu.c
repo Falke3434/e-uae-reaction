@@ -1981,8 +1981,9 @@ static void gen_opcode (unsigned long int opcode)
 	printf ("\t\tException (5, regs, oldpc);\n");
 	printf ("\t\tgoto %s;\n", endlabelstr);
 	printf ("\t} else {\n");
-	printf ("\t\tuae_s32 newv = (uae_s32)dst / (uae_s32)(uae_s16)src;\n");
-	printf ("\t\tuae_u16 rem = (uae_s32)dst %% (uae_s32)(uae_s16)src;\n");
+	/* 0x80000000 / -1 is undefined behaviour in C (SIGFPE on x86, garbage on PPC) */
+	printf ("\t\tuae_s32 newv = ((uae_u32)dst == 0x80000000 && (uae_s16)src == -1) ? 0x40000000 : (uae_s32)dst / (uae_s32)(uae_s16)src;\n");
+	printf ("\t\tuae_u16 rem = ((uae_u32)dst == 0x80000000 && (uae_s16)src == -1) ? 0 : (uae_s32)dst %% (uae_s32)(uae_s16)src;\n");
 	if (using_ce) {
 	    printf ("\t\tint cycles = getDivs68kCycles((uae_s32)dst, (uae_s16)src) * CYCLE_UNIT / 2;\n");
 	    addcycles3 ("\t\t");
@@ -2052,15 +2053,18 @@ static void gen_opcode (unsigned long int opcode)
 	sync_m68k_pc ();
 	addcycles (6);
 	fill_prefetch_next ();
-	printf ("\tif ((uae_s32)dst < 0) {\n");
-	printf ("\t\tSET_NFLG (&regs->ccrflags, 1);\n");
-	printf ("\t\tException (6, regs, oldpc);\n");
-	printf ("\t\tgoto %s;\n", endlabelstr);
-	printf ("\t} else if (dst > src) {\n");
-	printf ("\t\tSET_NFLG (&regs->ccrflags, 0);\n");
+	/* CHK also changes the "undefined" flags on real CPUs (checked against
+	 * hardware by the UAE CPU tester): see m68k_chk_flags() in newcpu.c */
+	printf ("\tif ((uae_s32)dst < 0 || dst > src) {\n");
+	printf ("\t\tm68k_chk_flags (regs, (uae_s32)src, (uae_s32)dst, %d);\n", curi->size == sz_word);
 	printf ("\t\tException (6, regs, oldpc);\n");
 	printf ("\t\tgoto %s;\n", endlabelstr);
 	printf ("\t}\n");
+	printf ("\tm68k_chk_flags (regs, (uae_s32)src, (uae_s32)dst, %d);\n", curi->size == sz_word);
+	/* no exception: 0 <= dst <= src. Real CPUs clear C/V, set Z for dst==0 and
+	 * N=0 (the flags used to be left untouched). Found with the UAE CPU tester. */
+	printf ("\tCLEAR_CZNV (&regs->ccrflags);\n");
+	printf ("\tSET_ZFLG (&regs->ccrflags, dst == 0);\n");
 	need_endlabel = 1;
 	break;
     case i_CHK2:
@@ -2084,8 +2088,13 @@ static void gen_opcode (unsigned long int opcode)
 	default:
 	    abort ();
 	}
+	sync_m68k_pc ();	/* exception frame needs the PC behind the instruction */
+	printf ("\tm68k_chk2_flags (regs, lower, upper, reg);\n");
 	printf ("\tSET_ZFLG (&regs->ccrflags, (upper == reg || lower == reg) ? 1 : 0);\n");
-	printf ("\tSET_CFLG_ALWAYS (&regs->ccrflags, lower <= upper ? ((reg < lower || reg > upper) ? 1 : 0) : ((reg > upper || reg < lower) ? 1 : 0));\n");
+	/* lower > upper (signed) is a valid "wrapped" range: only values in the gap
+	 * upper < reg < lower are out of bounds.  The old test (reg > upper || reg < lower)
+	 * was true for every value.  The bounds themselves are always in range. */
+	printf ("\tSET_CFLG_ALWAYS (&regs->ccrflags, (upper == reg || lower == reg) ? 0 : lower <= upper ? ((reg < lower || reg > upper) ? 1 : 0) : ((reg > upper && reg < lower) ? 1 : 0));\n");
 	printf ("\tif ((extra & 0x800) && GET_CFLG (&regs->ccrflags)) { Exception (6, regs, oldpc); goto %s; }\n}\n", endlabelstr);
 	need_endlabel = 1;
 	break;
@@ -2622,7 +2631,7 @@ static void gen_opcode (unsigned long int opcode)
 	need_endlabel = 1;
 	break;
     case i_DIVL:
-	sync_m68k_pc ();
+	/* no sync_m68k_pc() here: oldpc is the address of the instruction */
 	start_brace ();
 	printf ("\tuaecptr oldpc = m68k_getpc (regs);\n");
 	genamode (curi->smode, "srcreg", curi->size, "extra", 1, 0, 0);

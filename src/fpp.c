@@ -93,6 +93,30 @@ STATIC_INLINE fpp_rounding_mode get_rounding_mode (const struct regstruct *regs)
     return (regs->fpsr >> 4) & 3;
 }
 
+/* Round to nearest, ties to even (what the 68881/68882 does in RN mode).
+ * The old "(tointtype)(src + 0.5)" truncates towards zero, so it was wrong
+ * for every negative value (e.g. -2.7 gave -2, -1.5 gave -1).
+ * Idea of the fix: FlynnTheAvatar / MorphUAE. */
+STATIC_INLINE fptype round_nearest_even (fptype src)
+{
+    fptype r = floor (src + 0.5);
+    if (r - src == 0.5 && fmod (r, 2.0) != 0.0)
+	r -= 1.0;	/* exact tie -> pick the even neighbour */
+    return r;
+}
+
+/* FINT: round to integral value but keep it a float (no int cast). */
+STATIC_INLINE fptype fint_mode (fpp_rounding_mode mode, fptype src)
+{
+    switch (mode) {
+	case FPP_ROUND_TO_NEAREST: return round_nearest_even (src);
+	case FPP_ROUND_TO_ZERO:    return src >= 0.0 ? floor (src) : ceil (src);
+	case FPP_ROUND_DOWN:       return floor (src);
+	case FPP_ROUND_UP:         return ceil (src);
+    }
+    return src;
+}
+
 STATIC_INLINE tointtype toint (fpp_rounding_mode mode, fptype src)
 {
     switch (mode) {
@@ -100,7 +124,7 @@ STATIC_INLINE tointtype toint (fpp_rounding_mode mode, fptype src)
 #if USE_X86_FPUCW
 	    return (tointtype) (src);
 #else
-	    return (tointtype) (src + 0.5);
+	    return (tointtype) round_nearest_even (src);
 #endif
 	case FPP_ROUND_TO_ZERO:
 	    return (tointtype) src;
@@ -109,6 +133,7 @@ STATIC_INLINE tointtype toint (fpp_rounding_mode mode, fptype src)
 	case FPP_ROUND_UP:
 	    return (tointtype) ceil (src);
     }
+    return (tointtype) src;
 }
 
 STATIC_INLINE uae_u32 get_fpsr (const struct regstruct *regs)
@@ -716,6 +741,7 @@ void ftrapcc_opp (uae_u32 opcode, struct regstruct *regs, uaecptr oldpc)
     if (cc == -1) {
 	m68k_setpc (regs, oldpc);
 	op_illg (opcode, regs);
+	return;
     }
     if (cc)
 	Exception (7, regs, oldpc - 2);
@@ -1122,13 +1148,13 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 		regs->fp[reg] = log10 (2.0);
 		break;
 	    case 0x0c:
-		regs->fp[reg] = exp (1.0);
+		regs->fp[reg] = 2.71828182845904523536;
 		break;
 	    case 0x0d:
-		regs->fp[reg] = log (exp (1.0)) / log (2.0);
+		regs->fp[reg] = 1.44269504088896340736;
 		break;
 	    case 0x0e:
-		regs->fp[reg] = log (exp (1.0)) / log (10.0);
+		regs->fp[reg] = 0.43429448190325182765;
 		break;
 	    case 0x0f:
 		regs->fp[reg] = 0.0;
@@ -1205,7 +1231,7 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	    break;
 	case 0x01: /* FINT */
 	    /* need to take the current rounding mode into account */
-	    regs->fp[reg] = (fptype) toint (get_rounding_mode (regs), src);
+	    regs->fp[reg] = fint_mode (get_rounding_mode (regs), src);
 	    break;
 	case 0x02: /* FSINH */
 	    regs->fp[reg] = sinh (src);
@@ -1272,7 +1298,7 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	case 0x18: /* FABS */
 	case 0x58:
 	case 0x5c:
-	    regs->fp[reg] = src < 0 ? -src : src;
+	    regs->fp[reg] = fabs (src);
 	    if ((extra & 0x44) == 0x40)
 		fround (reg);
 	    break;
@@ -1295,8 +1321,14 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	case 0x1e: /* FGETEXP */
 	    {
 	      int expon;
-	      frexp (src, &expon);
-	      regs->fp[reg] = (double) (expon - 1);
+	      if (src == 0.0)
+		  regs->fp[reg] = src;
+	      else if (isnan (src) || isinf (src))
+		  regs->fp[reg] = src - src;	/* NaN */
+	      else {
+		  frexp (src, &expon);
+		  regs->fp[reg] = (double) (expon - 1);
+	      }
 	    }
 	    break;
 	case 0x1f: /* FGETMAN */
@@ -1343,7 +1375,15 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	    regs->fp[reg] -= src * floor ((regs->fp[reg] / src) + 0.5);
 	    break;
 	case 0x26: /* FSCALE */
-	    regs->fp[reg] *= exp (log (2.0) * src);
+	    /* scale by 2^(integer part of src), exact (was exp(log(2)*src)) */
+	    if (isnan (src) || isinf (src) || isnan (regs->fp[reg]))
+		regs->fp[reg] = regs->fp[reg] + src * 0.0;	/* NaN */
+	    else {
+		fptype n = src >= 0.0 ? floor (src) : ceil (src);
+		if (n > 100000.0) n = 100000.0;
+		if (n < -100000.0) n = -100000.0;
+		regs->fp[reg] = ldexp (regs->fp[reg], (int) n);
+	    }
 	    break;
 	case 0x27: /* FSGLMUL */
 	    regs->fp[reg] *= src;
@@ -1368,7 +1408,7 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	    break;
 	case 0x38: /* FCMP */
 	    {
-	      fptype tmp = regs->fp[reg] - src;
+	      fptype tmp = regs->fp[reg] == src ? 0.0 : regs->fp[reg] - src;
 	      regs->fpsr = 0;
 	      MAKE_FPSR (regs, tmp);
 	    }

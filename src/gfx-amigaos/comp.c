@@ -91,9 +91,21 @@ static ULONG compositeHookFunc(
 //		COMPTAG_Flags,      COMPFLAG_SrcFilter | COMPFLAG_IgnoreDestAlpha | COMPFLAG_HardwareOnly,
 
 		COMPTAG_SrcAlpha, COMP_FLOAT_TO_FIX(1.0f),
-		COMPTAG_Flags,      COMPFLAG_SrcAlphaOverride | COMPFLAG_IgnoreDestAlpha | COMPFLAG_HardwareOnly,
+		/* Kein COMPFLAG_HardwareOnly: ohne Hardware-Compositing (z. B. unter
+		 * QEMU/Pegasos2) schlug CompositeTags() sonst still fehl und das
+		 * Emulatorfenster blieb leer. So faellt es auf Software zurueck. */
+		COMPTAG_Flags,      COMPFLAG_SrcAlphaOverride | COMPFLAG_IgnoreDestAlpha,
 
 		TAG_END);
+
+	{
+		static int comp_err_reported = 0;
+		if (hookData->retCode != COMPERR_Success && comp_err_reported < 5)
+		{
+			comp_err_reported++;
+			printf("AMIGFX: CompositeTags() fehlgeschlagen, Fehlercode %ld\n", (long) hookData->retCode);
+		}
+	}
 
 	return 0;
 }
@@ -213,3 +225,96 @@ void set_target_hookData( void )
 
 
 
+
+#ifdef PICASSO96_SUPPORTED
+/*
+ * v16: hardware sprite (mouse pointer) of the uaegfx card. After
+ * BackFill_Func() has composited the RTG picture into the window, the
+ * pointer image (32 bit ARGB, alpha 0 = transparent) is composited on top
+ * with the same scale factors. The RTG picture itself (comp_p96_RP) is never
+ * changed, so nothing has to be restored when the pointer moves.
+ */
+typedef struct SpriteHookData_s {
+	struct BitMap *bm;
+	int32 w, h;          /* used part of the sprite bitmap */
+	int32 x, y;          /* position in RTG pixels */
+} SpriteHookData;
+
+void BackFill_Sprite(struct BitMap *bm, int w, int h, int x, int y);
+static struct Hook spriteHook;
+static SpriteHookData spriteData;
+
+static ULONG spriteHookFunc(struct Hook *hook, struct RastPort *rastPort, struct BackFillMessage *msg)
+{
+	SpriteHookData *sd = (SpriteHookData *) hook->h_Data;
+	float sx = (float) hookData.scaleX / (float) COMP_FIX_ONE;
+	float sy = (float) hookData.scaleY / (float) COMP_FIX_ONE;
+
+	/* bitmap coordinates of the window's layer origin */
+	int32 lx = msg->Bounds.MinX - msg->OffsetX;
+	int32 ly = msg->Bounds.MinY - msg->OffsetY;
+
+	/* RTG picture area in the bitmap */
+	int32 ax0 = lx + hookData.offsetX;
+	int32 ay0 = ly + hookData.offsetY;
+	int32 ax1 = ax0 + (int32) (hookData.srcWidth * sx);
+	int32 ay1 = ay0 + (int32) (hookData.srcHeight * sy);
+
+	/* sprite rectangle in the bitmap */
+	int32 ox = ax0 + (int32) (sd->x * sx);
+	int32 oy = ay0 + (int32) (sd->y * sy);
+	int32 x0 = ox, y0 = oy;
+	int32 x1 = ox + (int32) (sd->w * sx + 0.5f);
+	int32 y1 = oy + (int32) (sd->h * sy + 0.5f);
+
+	if (x0 < ax0) x0 = ax0;
+	if (y0 < ay0) y0 = ay0;
+	if (x1 > ax1) x1 = ax1;
+	if (y1 > ay1) y1 = ay1;
+	if (x0 < msg->Bounds.MinX) x0 = msg->Bounds.MinX;
+	if (y0 < msg->Bounds.MinY) y0 = msg->Bounds.MinY;
+	if (x1 > msg->Bounds.MaxX + 1) x1 = msg->Bounds.MaxX + 1;
+	if (y1 > msg->Bounds.MaxY + 1) y1 = msg->Bounds.MaxY + 1;
+	if (x0 >= x1 || y0 >= y1)
+		return 0;
+
+	CompositeTags(
+		COMPOSITE_Src_Over_Dest,
+			sd->bm,
+			rastPort->BitMap,
+		COMPTAG_SrcWidth,   sd->w,
+		COMPTAG_SrcHeight,  sd->h,
+		COMPTAG_ScaleX,     hookData.scaleX,
+		COMPTAG_ScaleY,     hookData.scaleY,
+		COMPTAG_OffsetX,    ox,
+		COMPTAG_OffsetY,    oy,
+		COMPTAG_DestX,      x0,
+		COMPTAG_DestY,      y0,
+		COMPTAG_DestWidth,  x1 - x0,
+		COMPTAG_DestHeight, y1 - y0,
+		COMPTAG_Flags,      COMPFLAG_IgnoreDestAlpha,
+		TAG_END);
+	return 0;
+}
+
+void BackFill_Sprite(struct BitMap *bm, int w, int h, int x, int y)
+{
+	if (!W || !bm || !hookData.srcBitMap || w <= 0 || h <= 0)
+		return;
+
+	spriteData.bm = bm;
+	spriteData.w = w;
+	spriteData.h = h;
+	spriteData.x = x;
+	spriteData.y = y;
+	spriteHook.h_Entry = (HOOKFUNC) spriteHookFunc;
+	spriteHook.h_Data = &spriteData;
+
+	{
+		struct RastPort *RPort = W->RPort;
+		LockLayer(0, RPort->Layer);
+		DoHookClipRects(&spriteHook, RPort, rect_ptr);
+		UnlockLayer(RPort->Layer);
+	}
+}
+#endif

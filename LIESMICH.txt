@@ -1,0 +1,141 @@
+ReAction-GUI fuer E-UAE (AmigaOS 4.1)
+E-UAE 2.0.0 mit ReAction-GUI 1.0 (interner Stand v17)
+
+Den Inhalt dieses Ordners ueber den E-UAE-Quellbaum kopieren (Dateien ersetzen):
+  configure, configure.in, src/Makefile.in, src/Makefile.am  (angepasst)
+  src/gui-reaction/                                           (neu, komplette GUI + Makefile.in)
+
+Bauen:
+  sh configure LIBS=-lamiga
+  make
+
+Das mitgelieferte "configure" ist ein schlankes, von Hand geschriebenes
+Bourne-Shell-Skript nur fuer AmigaOS 4.1/PPC. Es ersetzt das mit Autoconf 2.71
+erzeugte configure, das auf der Amiga-Shell abstuerzte. Das alte Skript liegt
+unveraendert als configure.autoconf-2.71 daneben.
+
+Unterschiede zum Autoconf-configure:
+  - keine Suche nach X11/SDL/GTK/pthread, keine Hilfsdateien noetig
+    (compile, missing, config.guess, config.sub)
+  - Abhaengigkeitsverfolgung aus (wie --disable-dependency-tracking):
+    nach Header-Aenderungen "make clean" ausfuehren
+  - autoconf/automake werden nie aufgerufen (AUTOCONF=: usw.)
+  - src/tools/configure wird wie im Original aufgerufen; falls das ebenfalls
+    abstuerzt:  UAE_TOOLS_CONFIGURE=skip sh configure LIBS=-lamiga
+  - Optionen: --disable-jit --disable-aga --disable-fpu --disable-debugger
+    --disable-state-saving --disable-enforcer --disable-action-replay
+    --disable-xarcade --disable-ui --disable-audio --disable-fdi
+    --disable-cycle-exact-cpu --disable-compatible-cpu
+    --disable-cdimage (ohne CD-ROM-Laufwerke / uaescsi.device)
+    --disable-cd32 (ohne CD32-Emulation / Akiko-Chip)
+  - Protokoll aller Tests: config.log
+
+Nach Aenderungen an Header-Dateien (z. B. von v15 auf v16) immer
+  make clean
+  make
+Von v15 auf v16 zusaetzlich vorher "sh configure ..." neu aufrufen: die
+CD-ROM-Dateien (scsiemul.c, blkdev.c, blkdev-cdimage.c) kommen erst damit
+in die Makefiles.
+Von v16 auf v17 ebenso "sh configure ..." neu aufrufen und "make clean":
+akiko.c (CD32) kommt erst damit in die Makefiles (-DCD32), und viele
+Header (options.h, memory.h, akiko.h, cdimage.h) haben sich geaendert.
+
+Grafikkarte (Picasso96 / RTG) ab v16:
+  - Die Karte uaegfx.card ist in E-UAE eingebaut. Auf der Amiga-Seite
+    braucht man nur Picasso96 (rtg.library) und die Monitordatei
+    DEVS:Monitors/UAEGFX. Eine vorhandene LIBS:Picasso96/uaegfx.card
+    aus dem Picasso96-Paket wird nicht mehr geladen und stoert nicht.
+  - GUI: Hardware-Seite "Grafikkarte (P96)" = Grafikspeicher (bis 128 MB,
+    ab 68020 mit 32 Bit). Display-Seite "Grafikkarte (RTG)":
+    Hardware-Mauszeiger und VBlank-Interrupt.
+
+CD-ROM-Laufwerk (ISO, CUE/BIN) ab v16:
+  - Ein Laufwerk, wahlweise an uaescsi.device (Einheit 0) oder als
+    ATAPI-Laufwerk an der IDE-Schnittstelle (A600/A1200 Gayle oder A4000,
+    Master oder Slave - wie die IDE-Hardfiles). Nur Images, keine echten
+    Laufwerke des Hosts. ISO-Dateien und CUE-Dateien mit ihren BIN-Dateien,
+    auch mit Audio-Tracks (CD-Audio wird in die Tonausgabe gemischt).
+  - GUI: Seite "Festplatten" -> "CD-Laufwerk hinzufuegen..." (Controller,
+    Position, Image; das Image darf leer bleiben). Seite "Medien" -> Gruppe
+    "CD-ROM-Laufwerk": CD wechseln oder auswerfen, auch waehrend die
+    Emulation laeuft.
+  - Booten von CD: Haekchen "Von CD booten (als CD0: einbinden)" im
+    CD-Fenster. E-UAE liest das ISO-9660-Dateisystem dann selbst, das
+    Laufwerk erscheint als CD0: im Bootmenue (auch ohne CD) und bootet mit
+    jeder Kickstart - ohne CD-Dateisystem und Mount-Eintrag im Amiga.
+    Boot-Prioritaet Vorgabe -127: die CD bootet nur, wenn sie im Bootmenue
+    gewaehlt wird (oder nichts anderes bootfaehig ist).
+  - Config: cdimage0=Pfad (leerer Wert = Laufwerk ohne CD),
+    cdimage0_controller=uaescsi|ide0|ide1, cdimage0_boot=true|false,
+    cdimage0_bootpri=-127
+  - Amiga-Seite: ein CD-Dateisystem (z. B. CDFileSystem von AmigaOS
+    3.5/3.9/3.1.4/3.2, CacheCDFS, AmiCDFS) und ein Mount-Eintrag:
+      uaescsi.device:  Device = uaescsi.device   Unit = 0   SectorSize = 2048
+      IDE (ATAPI):     Device = scsi.device      Unit = 0 (Master) / 1 (Slave)
+    Fuer IDE braucht man ein scsi.device mit ATAPI-Unterstuetzung
+    (Kickstart 3.1.4 / 3.2 oder einen gepatchten Treiber); das scsi.device
+    der Kickstart 3.1 kennt nur Festplatten.
+
+CD32 ab v17 (Akiko-Chip, Portierung aus WinUAE):
+  - Hardware-Seite: Modellvorgabe "CD32 (AGA, 2 MB, Akiko)" oder das
+    Haekchen "CD32-Akiko-Chip (CD-Laufwerk, C2P, NVRAM)" beim Chipsatz
+    (nur mit AGA). Damit haengt das CD-Laufwerk am Akiko (Seite
+    "Festplatten" zeigt "CD32 (Akiko)"); Controller "CD32 (Akiko)" im
+    CD-Fenster schaltet den Akiko ebenso ein.
+  - ROMs (Seite "Medien"): Kickstart = CD32-Kickstart 3.1 (512 KB),
+    Erweiterungs-ROM = CD32-Extended-ROM (512 KB). Oder das 1-MB-CD32-ROM
+    (beides in einer Datei, z. B. 391640-03) als Kickstart und das
+    Erweiterungs-ROM-Feld leer lassen.
+  - CD: Image (ISO oder CUE/BIN mit Audio-Tracks) auf der Seite "Medien"
+    einlegen oder wechseln, auch waehrend die Emulation laeuft. Der CD32
+    bootet die CD selbst; ohne CD erscheint der CD32-Startbildschirm.
+    Spiele mit mehreren CDs: CD auf der Seite "Medien" wechseln, der CD32
+    sieht das Auswerfen und Einlegen.
+  - NVRAM (Spielstaende): Datei PROGDIR:cd32.nvr (anderer Name mit
+    flash_file= in der Konfiguration), wird bei jedem Schreiben sofort
+    gespeichert.
+  - CD32-Pad: der Joystick an Amiga-Port 1 (Seite "Eingabe") ist mit dem
+    Akiko ein CD32-Pad; Joystick-Knoepfe 1-7 = Rot, Blau, Gelb, Gruen,
+    Vorspulen, Zurueckspulen, Play.
+  - Mit schneller CPU / JIT wird die Warteschleife des Extended-ROM
+    automatisch gepatcht (wie bei WinUAE). Fuer schnellstmoegliches Laden
+    in der Konfiguration cd_speed=0 setzen (Vorgabe 100 = echte Geschwindigkeit).
+  - Config (Schluessel wie WinUAE): cd32cd=, cd32c2p=, cd32nvram=,
+    cd32nvram_size= (KB), cd_speed=, flash_file=
+  - Nicht enthalten: CD32 FMV-Modul (Video-CDs), CD+G-Untertitel.
+
+Archive ab v17: Disketten-Images (und ROMs) duerfen in ZIP-, GZ-, LHA-/LZH-
+und LZX-Archiven liegen. Genommen wird das erste Disk-Image im Archiv;
+ein anderes waehlt man mit Pfad hinter dem Archiv, z. B.
+  Spiel.lha/Disk2.adf   oder   Spiel.lha/#2   (zweite Datei)
+
+Mittlere Maustaste ab v17 (Seite "Eingabe", Vorgabe an): im Fenster auf der
+Workbench gibt sie den Mauszeiger frei und macht das E-UAE-Fenster inaktiv;
+Klick ins Fenster macht weiter. Im Vollbild geht sie wie bisher an den Amiga.
+
+bsdsocket.library ab v17 (Netzwerk fuer Amiga-Programme ueber Roadshow):
+Aufrufe, die warten (Empfangen, Verbinden, WaitSelect, Namensaufloesung),
+halten nur noch das aufrufende Amiga-Programm an, nicht mehr die ganze
+Emulation; Strg+C bricht sie ab. Reset und Stop schliessen alle Sockets.
+Hinweis: WHDLoad ab 18.1 prueft bei jedem Start per Netzwerk auf Updates
+(abschalten mit dem Tooltype NoNetwork).
+
+Ton: laeuft die Emulation langsamer als in Echtzeit (fps unter 50 in der
+Statuszeile, z. B. MP3 mit einem FPU-Decoder - der JIT uebersetzt keine
+FPU-Befehle), wird der Ton langsam und knackt.
+
+Freezer-Module ab v17 (Seite "Medien", Feld "Modul"): Action Replay 1/2/3
+(ROM-Abbild des echten Moduls) oder HRTMon. Strg+Alt+F friert ein und
+oeffnet den Monitor des Moduls. AR2/AR3 sind fuer 68000-Amigas gedacht.
+
+Einstellungen ab v16 (Menue rechte Maustaste -> Projekt -> Einstellungen...):
+  - Ordner fuer ROMs, Disketten, Hardfiles, CD-Images, Konfigurationen und
+    Savestates: dort beginnen die Dateirequester, solange das Feld leer ist.
+    Leer = Vorgabe (PROGDIR:Roms/, PROGDIR:Floppies/, PROGDIR:HardFiles/,
+    PROGDIR:SaveStates/, PROGDIR:configs).
+  - Log-Ausgabe: Aus / Fenster / Datei PROGDIR:E-UAE.log.
+  - ab v17: "GUI nach dem Start ikonifizieren" (Vorgabe an). Das Fenster
+    hat ausserdem ein Ikonifizieren-Gadget; Doppelklick aufs Icon holt es
+    zurueck. Icon: PROGDIR:E-UAE.info, sonst PROGDIR:uae.info, sonst das
+    Standard-Icon.
+  - Gespeichert in PROGDIR:E-UAE.prefs, geladen bei jedem Start.

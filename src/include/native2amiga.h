@@ -45,6 +45,12 @@ void native2amiga_install (void);
  */
 void native2amiga_startup (void);
 
+/*
+ * v17: drop all pending requests (at a reset: they refer to tasks and
+ * messages of the old Amiga session)
+ */
+void native2amiga_reset (void);
+
 /**** internal stuff ****/
 #ifdef SUPPORT_THREADS
 /* This pipe is filled by Signal() with pairs of

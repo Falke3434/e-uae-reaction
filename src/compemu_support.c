@@ -352,6 +352,8 @@ STATIC_INLINE int isinrom(uae_uintptr addr)
 	return (addr >= (uae_uintptr) kickmemory && addr < (uae_uintptr) kickmemory + 8 * 65536);
 }
 
+STATIC_INLINE void invalidate_block(blockinfo* bi);
+
 static void check_checksum(void)
 {
 	write_jit_log("Check checksum...\n");
@@ -390,12 +392,17 @@ static void check_checksum(void)
 		 means we have to move it into the needs-to-be-flushed list */
 		bi->handler_to_use = bi->handler;
 
+		/* Back to the active list, otherwise the next soft flush would
+		 * not mark it for checking again and stale code could run. */
+		add_to_active(bi);
 		raise_in_cl_list(bi);
 	}
 	else
 	{
 		/* This block actually changed. We need to invalidate it,
 		 and set it up to be recompiled */
+		invalidate_block(bi);
+		add_to_active(bi);
 		raise_in_cl_list(bi);
 		execute_normal();
 	}
@@ -491,54 +498,66 @@ void flush_icache_hard(const char* callsrc)
 	set_special(&regs, 0); /* To get out of compiled code */
 }
 
+/**
+ * Instruction cache flush requested by the emulated CPU (CACR write with
+ * the clear bit, CINV, CPUSH).
+ *
+ * comp_flushmode=hard (comp_hardflush=1): the whole translation cache is
+ * thrown away, every block is translated again.
+ *
+ * comp_flushmode=soft (comp_hardflush=0): the translated code is kept. Every
+ * block of the active list gets check_checksum() as handler and is moved to
+ * the dormant list. On its next execution the checksum of the 68k code is
+ * recalculated: unchanged blocks are reactivated without recompiling, changed
+ * blocks are invalidated and translated again. Blocks in the Kickstart ROM
+ * are in the dormant list already and are not checked at all.
+ *
+ * Changes of the memory mapping (map_banks(), Picasso96 switch) must NOT use
+ * this function: the translated code contains the 68k addresses of the
+ * instructions, so those callers use flush_icache_hard().
+ */
 void flush_icache(int n)
 {
+	blockinfo* bi;
+	blockinfo* next;
+
+	if (currprefs.comp_hardflush || !compiled_code)
+	{
+		flush_icache_hard("cpu cache flush");
+		return;
+	}
+
 	write_jit_log("Flush icache soft (%d/%x/%p)\n", n, regs.pc, regs.pc_p);
 
-	//!TODO: is soft cache flush needed? It is retargeted to hard cache flush for now
-		flush_icache_hard("soft cache flush");
+	for (bi = active; bi; bi = next)
+	{
+		uae_u32 cl = cacheline(bi->pc_p);
 
-	//	uae_u32 i;
-	//	blockinfo* bi;
-	//	blockinfo* bi2;
-	//
-	//	if (currprefs.comp_hardflush)
-	//	{
-	//		flush_icache_hard("soft cache flush");
-	//		return;
-	//	}
-	//
-	//	if (!active)
-	//		return;
-	//
-	//	bi = active;
-	//	while (bi)
-	//	{
-	//		uae_u32 cl = cacheline(bi->pc_p);
-	//		if (!bi->handler)
-	//		{
-	//			/* invalidated block */
-	//			if (bi == cache_tags[cl + 1].bi)
-	//				cache_tags[cl].handler = execute_normal_callback;
-	//			bi->handler_to_use = execute_normal_callback;
-	//		}
-	//		else
-	//		{
-	//			if (bi == cache_tags[cl + 1].bi)
-	//				cache_tags[cl].handler = check_checksum_callback;
-	//			bi->handler_to_use = check_checksum_callback;
-	//		}
-	//		bi2 = bi;
-	//		bi = bi->next;
-	//	}
-	//	/* bi2 is now the last entry in the active list */
-	//	bi2->next = dormant;
-	//	if (dormant)
-	//		dormant->prev_p = &(bi2->next);
-	//
-	//	dormant = active;
-	//	active->prev_p = &dormant;
-	//	active = NULL;
+		next = bi->next;
+
+		if (bi->handler == NULL || bi->handler == exec_nostats_callback)
+		{
+			/* Invalidated block or block of unsupported instructions only:
+			 * let it run through the normal compiling path again (same as
+			 * after a hard flush). */
+			invalidate_block(bi);
+		}
+		else
+		{
+			bi->handler_to_use = check_checksum_callback;
+		}
+
+		/* Only the first block of a cache line is called directly */
+		if (bi == cache_tags[cl + 1].bi)
+			cache_tags[cl].handler = bi->handler_to_use;
+
+		add_to_dormant(bi);
+	}
+
+	active = NULL;
+
+	/* Get out of the compiled code (same as the hard flush) */
+	set_special(&regs, 0);
 }
 
 /**
@@ -764,15 +783,36 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 			//PowerPC cache flush at the end of the compiling
 			ppc_cacheflush(compile_p_at_start, current_compile_p - compile_p_at_start);
 
-			//Lower and upper bound of the translated block
+			//Lower and upper bound of the translated block.
+			//With comp_constjump the history follows constant jumps, so the
+			//instructions are not necessarily in ascending order: use min/max.
 			uae_uintptr min_pcp = (uae_uintptr) pc_hist[0].location;
-			uae_uintptr max_pcp = (uae_uintptr) pc_hist[blocklen - 1].location;
+			uae_uintptr max_pcp = min_pcp;
+			for (i = 1; i < blocklen; i++)
+			{
+				uae_uintptr loc = (uae_uintptr) pc_hist[i].location;
+				if (loc < min_pcp) min_pcp = loc;
+				if (loc > max_pcp) max_pcp = loc;
+			}
 
-			//After translation calculate the real block length in 68k memory for the compiled block
-			bi->len = max_pcp - min_pcp;
+			//The last instruction starts at max_pcp, its extension words follow:
+			//cover the longest possible 68k instruction (as WinUAE does)
+			max_pcp += LONGEST_68K_INST;
+
+			//After translation calculate the real block length in 68k memory for the compiled block.
+			//Note: the checksum starts at bi->pc_p (first instruction), so the
+			//length is measured from there (blocks never contain code below pc_p
+			//unless a constant jump went backwards: then min_pcp is used).
+			bi->len = max_pcp - (uae_uintptr) bi->pc_p;
+			if (min_pcp < (uae_uintptr) bi->pc_p)
+			{
+				//Backward constant jump inside the block: the checksum cannot
+				//cover the code below pc_p, never trust it on a soft flush
+				bi->len = MAX_CHECKSUM_LEN + 1;
+			}
 
 			//Calculate checksum
-			if (isinrom(min_pcp) && isinrom(max_pcp))
+			if (isinrom(min_pcp) && isinrom(max_pcp - LONGEST_68K_INST))
 			{
 				//No need to checksum it on cache flush,
 				//but move the block to the dormant list
@@ -780,8 +820,10 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 			}
 			else
 			{
-				//No need to add to the active list, the block was added
-				//when it was created, but we need a checksum
+				//The block may come from the dormant list (soft flush,
+				//check_checksum() found it changed): make sure it is active
+				//and calculate the checksum for the next soft flush
+				add_to_active(bi);
 				calc_checksum(bi, &(bi->c1), &(bi->c2));
 			}
 
@@ -1424,6 +1466,10 @@ STATIC_INLINE void invalidate_block(blockinfo* bi)
 	bi->count = currprefs.optcount[0] - 1;
 	bi->handler = NULL;
 	bi->handler_to_use = execute_normal_callback;
+	/* The blockinfo lives in the (uninitialised) code buffer: no stale
+	 * checksum must survive, see check_checksum() */
+	bi->len = 0;
+	bi->c1 = bi->c2 = 0;
 }
 
 STATIC_INLINE blockinfo* get_blockinfo_addr_new(void* addr, int setstate)

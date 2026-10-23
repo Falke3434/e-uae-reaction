@@ -270,5 +270,6 @@ extern void chipmem_bput_ce2 (uaecptr, uae_u32) REGPARAM;
 
 extern uae_u8 *mapped_malloc (size_t, const char *);
 extern void mapped_free (uae_u8 *);
+extern int extendedkickmem_size_get (void);   /* v17: CD32 ROM patch (akiko.c) */
 extern void clearexec (void);
 extern void mapkick (void);

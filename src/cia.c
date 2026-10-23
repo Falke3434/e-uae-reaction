@@ -472,6 +472,11 @@ static void bfe001_change (void)
 	    map_overlay (0);
 	}
     }
+#ifdef CD32
+    /* v17: on the CD32 this pin mutes the CD audio (WinUAE) */
+    if (cd32_enabled)
+	akiko_mute ((v & 1) == 0);
+#endif
 }
 
 static uae_u8 ReadCIAA (unsigned int addr)
@@ -1017,11 +1022,8 @@ void CIA_reset (void)
 	DISK_select (ciabprb);
     }
 #ifdef CD32
-    if (cd32_enabled) {
-	akiko_reset ();
-	if (!akiko_init ())
-	    cd32_enabled = 0;
-    }
+    /* v17: (re)starts the Akiko CD drive thread, NVRAM, C2P */
+    akiko_init ();
 #endif
 }
 
@@ -1053,14 +1055,6 @@ addrbank cia_bank = {
 };
 
 
-#ifdef CD32
-extern uae_u32 akiko_lget (uaecptr addr) REGPARAM;
-extern uae_u32 akiko_wget (uaecptr addr) REGPARAM;
-extern uae_u32 akiko_bget (uaecptr addr) REGPARAM;
-extern void akiko_bput (uaecptr addr, uae_u32 value) REGPARAM;
-extern void akiko_wput (uaecptr addr, uae_u32 value) REGPARAM;
-extern void akiko_lput (uaecptr addr, uae_u32 value) REGPARAM;
-#endif
 
 /* e-clock is 10 CPU cycles, 6 cycles low, 4 high
  * data transfer happens during 4 high cycles
@@ -1097,10 +1091,6 @@ uae_u32 REGPARAM2 cia_bget (uaecptr addr)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_READ;
 #endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END)
-	return akiko_bget (addr);
-#endif
     cia_wait_pre ();
     v = 0xff;
     switch ((addr >> 12) & 3) {
@@ -1134,10 +1124,6 @@ uae_u32 REGPARAM2 cia_wget (uaecptr addr)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_READ;
 #endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END)
-	return akiko_wget (addr);
-#endif
     cia_wait_pre ();
     v = 0xffff;
     switch ((addr >> 12) & 3) {
@@ -1169,10 +1155,6 @@ uae_u32 REGPARAM2 cia_lget (uaecptr addr)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_READ;
 #endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END)
-	return akiko_lget (addr);
-#endif
     v = cia_wget (addr) << 16;
     v |= cia_wget (addr + 2);
     return v;
@@ -1184,12 +1166,6 @@ void REGPARAM2 cia_bput (uaecptr addr, uae_u32 value)
 
 #ifdef JIT
     special_mem |= SPECIAL_MEM_WRITE;
-#endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END) {
-	akiko_bput (addr, value);
-	return;
-    }
 #endif
     cia_wait_pre ();
     if ((addr & 0x2000) == 0)
@@ -1209,12 +1185,6 @@ void REGPARAM2 cia_wput (uaecptr addr, uae_u32 value)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_WRITE;
 #endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END) {
-	akiko_wput (addr, value);
-	return;
-    }
-#endif
     cia_wait_pre ();
     if ((addr & 0x2000) == 0)
 	WriteCIAB (r, value >> 8);
@@ -1231,12 +1201,6 @@ void REGPARAM2 cia_lput (uaecptr addr, uae_u32 value)
 {
 #ifdef JIT
     special_mem |= SPECIAL_MEM_WRITE;
-#endif
-#ifdef CD32
-    if (cd32_enabled && addr >= AKIKO_BASE && addr < AKIKO_BASE_END) {
-	akiko_lput (addr, value);
-	return;
-    }
 #endif
     cia_wput (addr, value >> 16);
     cia_wput (addr + 2, value & 0xffff);

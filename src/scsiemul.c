@@ -28,6 +28,7 @@
 #include "blkdev.h"
 #include "scsidev.h"
 #include "sleep.h"
+#include "cdimage.h"
 
 #define CDDEV_COMMANDS
 
@@ -60,6 +61,17 @@
 #define CMD_ADDCHANGEINT 20
 #define CMD_REMCHANGEINT 21
 #define CMD_GETGEOMETRY	22
+#define TD_EJECT	23
+#define TD_READ64	24
+#define TD_SEEK64	26
+#define NSCMD_DEVICEQUERY 0x4000
+#define NSCMD_TD_READ64	0xc000
+#define NSCMD_TD_SEEK64	0xc002
+#define HD_SCSICMD	28
+
+#define NSDEVTYPE_TRACKDISK 5
+#define DG_CDROM	5
+#define DGF_REMOVABLE	1
 
 #define CD_INFO		32
 #define CD_CONFIG	33
@@ -101,6 +113,7 @@ struct devstruct {
     smp_comm_pipe requests;
     uae_thread_id tid;
     int thread_running;
+    int thread_closing;     /* v16: thread was told to end (last CloseDevice) */
     uae_sem_t sync_sem;
 };
 
@@ -119,6 +132,20 @@ static struct devstruct devst[MAX_TOTAL_DEVICES];
 static struct priv_devstruct pdevst[MAX_OPEN_DEVICES];
 
 static uae_sem_t change_sem;
+static uaecptr ROM_scsidev_cmdlist;     /* NSCMD_DEVICEQUERY command list */
+
+/* v16: the device is needed for "scsi=true" and for every CD-ROM drive */
+int scsidev_enabled (void)
+{
+    int i;
+    if (currprefs.scsi)
+	return 1;
+    for (i = 0; i < MAX_CD_DRIVES; i++)
+	if (currprefs.cddrive[i] && currprefs.cd_controller == CD_CTRL_UAESCSI
+	    && !CD_ON_AKIKO (&currprefs))
+	    return 1;
+    return 0;
+}
 
 static struct device_info *devinfo (int mode, int unitnum, struct device_info *di)
 {
@@ -173,6 +200,10 @@ static const char *getdevname (int type)
 static void *dev_thread (void *devs);
 static int start_thread (struct devstruct *dev)
 {
+    if (dev->thread_closing) {
+	dev->thread_closing = 0;
+	uae_sem_wait (&dev->sync_sem);          /* old thread has ended */
+    }
     if (dev->thread_running)
 	return 1;
     init_comm_pipe (&dev->requests, 100, 1);
@@ -193,6 +224,10 @@ static void dev_close_3 (struct devstruct *dev, struct priv_devstruct *pdev)
 	    sys_command_close (DF_IOCTL, dev->unitnum);
 	pdev->inuse = 0;
 	write_comm_pipe_u32 (&dev->requests, 0, 1);
+	/* v16: the unit thread is ending now; the next OpenDevice() waits
+	 * for it (start_thread), otherwise it would find thread_running
+	 * still set and queue its requests to a thread that is leaving */
+	dev->thread_closing = 1;
     }
 }
 
@@ -395,10 +430,15 @@ static void abort_async (struct devstruct *dev, uaecptr request, int errcode, in
 	write_log ("asyncronous request=%08.8X aborted, error=%d\n", request, errcode);
 }
 
-static int command_read (int mode, struct devstruct *dev, uaecptr data, int offset, int length, uae_u32 *io_actual)
+static int command_read (int mode, struct devstruct *dev, uaecptr data, uae_u64 offset64, int length, uae_u32 *io_actual)
 {
     const uae_u8 *temp;
-    int len, sector;
+    int len, sector, offset;
+
+    /* v16: CD-ROM images, direct 64-bit block access */
+    if (cdimage_unit_present (dev->unitnum))
+	return cdimage_read_blocks (dev->unitnum, offset64, length, data, io_actual);
+    offset = (int)offset64;
 
     int startoffset = offset % dev->di.bytespersector;
     offset -= startoffset;
@@ -452,6 +492,54 @@ static int dev_do_io (struct devstruct *dev, uaecptr request)
 	case CMD_READ:
 	io_error = command_read (pdev->mode, dev, io_data, io_offset, io_length, &io_actual);
 	break;
+	case TD_READ64:
+	case NSCMD_TD_READ64:
+	io_error = command_read (pdev->mode, dev, io_data, ((uae_u64)io_actual << 32) | io_offset, io_length, &io_actual);
+	break;
+	case TD_SEEK64:
+	case NSCMD_TD_SEEK64:
+	io_actual = 0;
+	break;
+	case CMD_GETGEOMETRY: {
+	    struct device_info *pdi = devinfo (pdev->mode, dev->unitnum, &di);
+	    if (!pdi || io_length < 30 || !valid_address (io_data, 30)) {
+		io_error = -3;
+		break;
+	    }
+	    put_long (io_data + 0, pdi->bytespersector);
+	    put_long (io_data + 4, pdi->cylinders * pdi->trackspercylinder * pdi->sectorspertrack);
+	    put_long (io_data + 8, pdi->cylinders);
+	    put_long (io_data + 12, pdi->trackspercylinder * pdi->sectorspertrack);
+	    put_long (io_data + 16, pdi->trackspercylinder);
+	    put_long (io_data + 20, pdi->sectorspertrack);
+	    put_long (io_data + 24, 1);                 /* MEMF_PUBLIC */
+	    put_byte (io_data + 28, pdi->type == INQ_ROMD ? DG_CDROM : pdi->type);
+	    put_byte (io_data + 29, DGF_REMOVABLE);
+	    if (io_length >= 32)
+		put_word (io_data + 30, 0);
+	    io_actual = io_length >= 32 ? 32 : 30;
+	    break;
+	}
+	case NSCMD_DEVICEQUERY:
+	if (io_length < 16 || !valid_address (io_data, 16) || !ROM_scsidev_cmdlist) {
+	    io_error = -3;
+	    break;
+	}
+	put_long (io_data + 0, 0);
+	put_long (io_data + 4, 16);
+	put_word (io_data + 8, NSDEVTYPE_TRACKDISK);
+	put_word (io_data + 10, 0);
+	put_long (io_data + 12, ROM_scsidev_cmdlist);
+	io_actual = 16;
+	break;
+	case TD_EJECT:
+	if (dev->allow_scsi) {
+	    static const uae_u8 eject[6] = { 0x1b, 0, 0, 0, 0x02, 0 };
+	    static const uae_u8 load[6]  = { 0x1b, 0, 0, 0, 0x03, 0 };
+	    io_error = sys_command_exec_out (dev->unitnum, io_length ? eject : load, 6) ? 0 : 28;
+	}
+	io_actual = 0;
+	break;
 	case CMD_WRITE:
 	case CMD_FORMAT:
 	io_error = 28; /* writeprotect */
@@ -479,7 +567,7 @@ static int dev_do_io (struct devstruct *dev, uaecptr request)
 	io_actual = dev->drivetype;
 	break;
 	case CMD_GETNUMTRACKS:
-	io_actual = dev->di.cylinders;
+	io_actual = devinfo(pdev->mode, dev->unitnum, &di)->cylinders;
 	break;
 	case CMD_ADDCHANGEINT:
 	io_error = add_async_request (dev, request, ASYNC_REQUEST_CHANGEINT, io_data);
@@ -489,7 +577,7 @@ static int dev_do_io (struct devstruct *dev, uaecptr request)
 	case CMD_REMCHANGEINT:
 	release_async_request (dev, request);
 	break;
-	case 28: /* HD_SCSICMD */
+	case HD_SCSICMD:
 	if (dev->allow_scsi && pdev->scsi) {
 	    uae_u32 sdd = get_long (request + 40);
 	    io_error = sys_command_scsi_direct (dev->unitnum, sdd);
@@ -646,7 +734,7 @@ static void dev_exit (void)
 	    /* Abort any outstanding requests */
 	    for (j = 0; j < MAX_ASYNC_REQUESTS; j++) {
 		uaecptr request;
-		if ((request = dev->d_request[i]))
+		if ((request = dev->d_request[j]))
 		    abort_async (dev, request, 0, 0);
 	    }
 
@@ -658,6 +746,10 @@ static void dev_exit (void)
 	    dev->opencnt = 0;
 	    sys_command_close (DF_SCSI, dev->unitnum);
 	    sys_command_close (DF_IOCTL, dev->unitnum);
+	} else if (dev->thread_closing) {
+	    /* v16: last CloseDevice() told the thread to end, wait for it
+	     * before the structure (and its semaphore) is cleared */
+	    uae_sem_wait (&dev->sync_sem);
 	}
 	memset (dev, 0, sizeof (struct devstruct));
 	dev->unitnum = dev->aunit = -1;
@@ -672,6 +764,7 @@ static void dev_reset (void)
     int unitnum = 0;
 
     device_func_init (DEVICE_TYPE_SCSI);
+    cdimage_reset ();     /* v16: apply the configured CD-ROM drives */
 
     dev_exit();
 
@@ -748,7 +841,7 @@ static uaecptr diskdev_startup (uaecptr resaddr)
 
 uaecptr scsidev_startup (uaecptr resaddr)
 {
-    if (!currprefs.scsi)
+    if (!scsidev_enabled ())
 	return resaddr;
     if (log_scsi)
 	write_log ("scsidev_startup(0x%x)\n", resaddr);
@@ -773,8 +866,6 @@ static void diskdev_install (void)
     uae_u32 initcode, openfunc, closefunc, expungefunc;
     uae_u32 beginiofunc, abortiofunc;
 
-    if (!currprefs.scsi)
-	return;
     if (log_scsi)
 	write_log ("diskdev_install(): 0x%x\n", here ());
 
@@ -852,8 +943,13 @@ void scsidev_install (void)
     uae_u32 initcode, openfunc, closefunc, expungefunc;
     uae_u32 beginiofunc, abortiofunc;
 
-    if (!currprefs.scsi)
-	return;
+    /* The device code is written at every start of the emulation, also
+     * when no drive is configured (CD-ROM drives can be added in the GUI
+     * before the next start); only the Resident (scsidev_startup) depends
+     * on the configuration. v17: rtarea_init() clears the rtarea and the
+     * trap table at every start (do_preinit_machine()), so the v16 "write
+     * only once" made uaescsi.device disappear from the second start on;
+     * nothing piles up, as the rtarea starts empty each time. */
     if (log_scsi)
 	write_log ("scsidev_install(): 0x%x\n", here ());
 
@@ -923,12 +1019,22 @@ void scsidev_install (void)
     dl (datatable);
     dl (initcode);
 
+    /* v16: commands reported by NSCMD_DEVICEQUERY */
+    ROM_scsidev_cmdlist = here ();
+    dw (CMD_RESET); dw (CMD_READ); dw (CMD_WRITE); dw (CMD_UPDATE); dw (CMD_CLEAR);
+    dw (CMD_STOP); dw (CMD_START); dw (CMD_FLUSH); dw (CMD_MOTOR); dw (CMD_SEEK);
+    dw (CMD_REMOVE); dw (CMD_CHANGENUM); dw (CMD_CHANGESTATE); dw (CMD_PROTSTATUS);
+    dw (CMD_GETDRIVETYPE); dw (CMD_GETNUMTRACKS); dw (CMD_ADDCHANGEINT);
+    dw (CMD_REMCHANGEINT); dw (CMD_GETGEOMETRY); dw (TD_EJECT); dw (TD_READ64);
+    dw (TD_SEEK64); dw (HD_SCSICMD); dw (NSCMD_DEVICEQUERY); dw (NSCMD_TD_READ64);
+    dw (NSCMD_TD_SEEK64); dw (0);
+
     diskdev_install ();
 }
 
 void scsidev_start_threads (void)
 {
-    if (!currprefs.scsi) /* quite useless.. */
+    if (!scsidev_enabled ()) /* quite useless.. */
 	return;
     if (log_scsi)
 	write_log ("scsidev_start_threads()\n");
@@ -937,14 +1043,14 @@ void scsidev_start_threads (void)
 
 void scsidev_exit (void)
 {
-    if (!currprefs.scsi)
-	return;
-    dev_exit ();
+    if (scsidev_enabled ())
+	dev_exit ();
+    cdimage_shutdown ();      /* v16: close the CD images in any case */
 }
 
 void scsidev_reset (void)
 {
-    if (!currprefs.scsi)
+    if (!scsidev_enabled ())
 	return;
     dev_reset ();
 }

@@ -43,6 +43,24 @@ void native2amiga_startup (void)
 
 #ifdef SUPPORT_THREADS
 
+/* v17: number of arguments after the command word, see filesys.c
+ * exter_int_helper() */
+void native2amiga_reset (void)
+{
+    static const int nargs[] = { 2, 2, 1, 1, 2 };
+
+    uae_sem_wait (&n2asem);
+    while (comm_pipe_has_data (&native2amiga_pending)) {
+	int cmd = read_comm_pipe_int_blocking (&native2amiga_pending);
+	int i;
+	if (cmd < 0 || cmd > 4)
+	    break;                       /* out of step - should not happen */
+	for (i = 0; i < nargs[cmd]; i++)
+	    read_comm_pipe_u32_blocking (&native2amiga_pending);
+    }
+    uae_sem_post (&n2asem);
+}
+
 void uae_Cause (uaecptr interrupt)
 {
     uae_sem_wait (&n2asem);
@@ -91,6 +109,10 @@ void uae_NotificationHack (uaecptr port, uaecptr nr)
     uae_sem_post (&n2asem);
 }
 
+#else
+void native2amiga_reset (void)
+{
+}
 #endif
 
 void uae_NewList (uaecptr list)

@@ -1778,8 +1778,11 @@ STATIC_INLINE void putpixel (int x, xcolnr c8)
 	break;
     case 2:
     {
-//	uae_u16 *p = (uae_u16 *)xlinebuffer + x;
-//	*p = (uae_u16)c8;
+	/* 16 Bit (z. B. R5G6B5): war auskommentiert -> keine LEDs/Zahlen im Bild.
+	 * xcolors[] enthaelt bei <= 16 bpp die Farbe in beiden 16-Bit-Haelften
+	 * (und ggf. schon byte-getauscht), die untere Haelfte ist der Pixelwert. */
+	uae_u16 *p = (uae_u16 *)xlinebuffer + x;
+	*p = (uae_u16)c8;
 	break;
     }
     case 3:

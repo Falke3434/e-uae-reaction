@@ -51,11 +51,15 @@
 #endif
 #include "debug.h"
 #include "akiko.h"
+#include "gayle.h"
 #if defined(ENFORCER)
 #include "enforcer.h"
 #endif
 #include "hrtimer.h"
 #include "sleep.h"
+#ifdef SCSIEMU
+#include "cdimage.h"
+#endif
 
 static void uae_abort (const char *format,...)
 {
@@ -4096,6 +4100,7 @@ static frame_time_t framewait_friendly (frame_time_t end_time)
     frame_time_t start_time = uae_gethrtime ();
     frame_time_t curr_time;
     frame_time_t time_left;
+    frame_time_t slept = 0;      /* nur echte Schlafzeit zaehlt als Leerlauf */
 
     /*
      * Use system sleep routine to get close to end_time
@@ -4106,7 +4111,6 @@ static frame_time_t framewait_friendly (frame_time_t end_time)
 
 	if (time_left < (-syncbase) || time_left > syncbase) {
 	    /* Either timer has screwed up or we've badly overshot end_time */
-	    write_log ("framewait overflow\n");
 	    return curr_time;
 	} else {
 	    static int min_sleep = 3; /* Estimate of how long a 2ms sleep will actually take */
@@ -4116,6 +4120,7 @@ static frame_time_t framewait_friendly (frame_time_t end_time)
 		static int total = 0;
 
 		uae_msleep (2);
+		slept += uae_gethrtime () - curr_time;
 
 		/* Callibrate time we slept for and try to adjust to
 		 * changing lantencies.
@@ -4126,9 +4131,12 @@ static frame_time_t framewait_friendly (frame_time_t end_time)
 		count++;
 
 		if ((count & 31) == 0) {
+		    static int last_min_sleep;
 		    min_sleep = 1 + total / 32;
 		    total = 0;
 		    count = 0;
+		    /* v17: no log line for every change (one per second) */
+		    last_min_sleep = min_sleep;
 		}
 	    } else
 		break;
@@ -4147,7 +4155,9 @@ static frame_time_t framewait_friendly (frame_time_t end_time)
 	}
     } while (time_left >= 0);
 
-    idletime += curr_time - start_time;
+    /* Busy-Wait-Rest ist KEIN Leerlauf (verbraucht Host-CPU); sonst zeigt die
+     * GUI 0% Last, waehrend die Host-CPU zu 100% ausgelastet ist. */
+    idletime += slept;
 
     return curr_time;
 }
@@ -4167,7 +4177,6 @@ static frame_time_t framewait_busy (frame_time_t end_time)
 
 	if (time_left < (-syncbase) || time_left > syncbase) {
 	    /* Either timer has screwed up or we've badly overshot end_time */
-	    write_log ("framewait overflow\n");
 	    return curr_time;
 	}
     } while (time_left >= 0);
@@ -4306,6 +4315,13 @@ static void vsync_handler (void)
     DX_SetPalette_vsync();
     if (picasso_on)
 	picasso_handle_vsync ();
+    /* VBLANK interrupt of the uaegfx card (BIF_VBLANKINTERRUPT); the VERTB
+     * request above is serviced after this, so the card's server sees the
+     * flag in this frame. */
+    picasso_trigger_vblank ();
+#endif
+#ifdef SCSIEMU
+    cdimage_vsync ();           /* v16: CD-ROM image change, CD-DA timing */
 #endif
 
     {
@@ -4324,6 +4340,12 @@ static void vsync_handler (void)
 #endif
 
     vsync_handle_redraw (lof, lof_changed);
+
+#ifdef USE_AMIGA_GFX
+    /* AmigaOS backend: present the picture once per frame, after the last
+       lines of the frame have been flushed (was hidden in is_vsync()) */
+    amiga_gfx_present ();
+#endif
 
     /* For now, let's only allow this to change at vsync time.  It gets too
      * hairy otherwise.  */
@@ -4409,6 +4431,7 @@ void hsync_handler (void)
     eventtab[ev_hsync].evtime += get_cycles () - eventtab[ev_hsync].oldcycles;
     eventtab[ev_hsync].oldcycles = get_cycles ();
     CIA_hsync_handler ();
+    gayle_hsync_handler ();
 #ifdef CD32
     AKIKO_hsync_handler ();
 #endif
@@ -4417,6 +4440,15 @@ void hsync_handler (void)
     picasso_handle_hsync ();
 #endif
     ciahsync++;
+#ifdef CD32
+    /* v17: on the CD32 Akiko fakes the CIA-A TOD rate (50/60 Hz, CONFIG bit 23) */
+    if (currprefs.cs_cd32cd) {
+	if (ciahsync >= (akiko_ntscmode () ? MAXVPOS_NTSC : MAXVPOS_PAL) * MAXHPOS_PAL / maxhpos) {
+	    CIA_vsync_handler ();
+	    ciahsync = 0;
+	}
+    } else
+#endif
     if (ciahsync >= (currprefs.ntscmode ? MAXVPOS_NTSC : MAXVPOS_PAL) * MAXHPOS_PAL / maxhpos) { /* not so perfect.. */
 	CIA_vsync_handler ();
 	ciahsync = 0;

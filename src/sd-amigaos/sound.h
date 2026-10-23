@@ -18,6 +18,10 @@
 #include <proto/dos.h>
 #include <clib/alib_protos.h>
 
+#ifdef SCSIEMU
+#include "cdimage.h"
+#endif
+
 #ifdef __amigaos4__
 #undef CreateMsgPort
 #undef DeleteMsgPort
@@ -70,6 +74,10 @@ STATIC_INLINE void check_sound_buffers (void)
     if ((char *)sndbufpt - (char *)sndbuffer >= sndbufsize) {
 #ifdef DRIVESOUND
         driveclick_mix ((uae_s16*)sndbuffer, sndbufsize >> 1);
+#endif
+#ifdef SCSIEMU
+	/* v16: CD audio of the CD-ROM image drives */
+	cdimage_mix ((uae_s16*)sndbuffer, sndbufsize >> 1, currprefs.sound_stereo ? 2 : 1, currprefs.sound_freq);
 #endif
 	flush_sound_buffer ();
     }

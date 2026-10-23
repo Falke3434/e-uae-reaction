@@ -19,6 +19,9 @@
 #include "newcpu.h"
 #include "autoconf.h"
 #include "filesys.h"
+#ifdef SCSIEMU
+#include "scsidev.h"
+#endif
 #include "xwin.h"
 #include "picasso96.h"
 #include "savestate.h"
@@ -1038,10 +1041,22 @@ static void expamem_map_gfxcard (void)
 
 static void expamem_init_gfxcard (void)
 {
-    expamem_init_clear();
-    expamem_write (0x00, zorroIII);
+    /* Up to 8 MB: an 8 MB board with sub-size. More than 8 MB (v16): the
+     * extended size table, as for the Zorro III fast memory. Before, 16 and
+     * 32 MB were announced as an 8 MB board, so AmigaOS could place the next
+     * board into the upper part of the graphics memory. */
+    int code = (allocated_gfxmem == 0x1000000 ? Z2_MEM_16MB
+		: allocated_gfxmem == 0x2000000 ? Z2_MEM_32MB
+		: allocated_gfxmem == 0x4000000 ? Z2_MEM_64MB
+		: allocated_gfxmem == 0x8000000 ? Z2_MEM_128MB
+		: Z2_MEM_8MB);
 
-    switch (allocated_gfxmem) {
+    expamem_init_clear();
+    expamem_write (0x00, zorroIII | (allocated_gfxmem > 0x800000 ? code : Z2_MEM_8MB));
+
+    if (allocated_gfxmem > 0x800000)
+	expamem_write (0x08, no_shutup | force_z3 | ext_size);
+    else switch (allocated_gfxmem) {
      case 0x00100000:
 	expamem_write (0x08, no_shutup | force_z3 | Z3_MEM_1MB);
 	break;
@@ -1136,6 +1151,10 @@ static void allocate_expamem (void)
 
     z3fastmem_bank.baseaddr = z3fastmem;
     fastmem_bank.baseaddr = fastmemory;
+#ifdef PICASSO96
+    /* v16: direct reads of the framebuffer by the JIT (picasso96.c) */
+    gfxmem_bank.baseaddr = gfxmemory;
+#endif
 
 #ifdef SAVESTATE
     if (savestate_state == STATE_RESTORE) {
@@ -1187,8 +1206,26 @@ void expamem_reset (void)
 	do_mount = 0;
     }
 #ifdef FILESYS
-    /* No need for filesystem stuff if there aren't any mounted.  */
-    if (nr_units (currprefs.mountinfo) == 0)
+    /* No need for filesystem stuff if there aren't any mounted - except for
+     * the built-in uaegfx.card (v16): it is created by the DiagEntry of the
+     * filesys board (filesys_diagentry), so the board is needed with
+     * graphics card memory too (as in WinUAE, where RTG enables the boot ROM). */
+    if (nr_units (currprefs.mountinfo) == 0
+#ifdef PICASSO96
+	&& gfxmemory == NULL
+#endif
+#ifdef SCSIEMU
+	/* v16: uaescsi.device (CD-ROM images) is started by the DiagEntry too */
+	&& !scsidev_enabled ()
+#endif
+	/* v16: built-in CD file system unit CD0: */
+	&& !cdfs_wanted ()
+#ifdef BSDSOCKET
+	/* v17: bsdsocket.library wakes waiting Amiga tasks through the
+	 * EXTER interrupt of the filesys board (uae_Signal) */
+	&& !currprefs.socket_emu
+#endif
+	)
 	do_mount = 0;
 #endif
 

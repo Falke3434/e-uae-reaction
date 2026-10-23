@@ -99,6 +99,7 @@ static const struct cfg_lines opttable[] =
     {"serial_on_demand", "" },
     {"scsi", "scsi.device emulation" },
     {"scsi_device", "SCSI device/bus to scan for SCSI devices"},
+    {"cdimage0", "CD-ROM drive 0 (uaescsi.device unit 0): ISO or CUE image, empty = no disc"},
     {"joyport0", "" },
     {"joyport1", "" },
     {"kickstart_rom_file", "Kickstart ROM image, (C) Copyright Amiga, Inc." },
@@ -116,6 +117,15 @@ static const struct cfg_lines opttable[] =
     {"hardfile", "access,sectors, surfaces, reserved, blocksize, path format" },
     {"filesystem", "access,'Amiga volume-name':'host directory path' - where 'access' can be 'read-only' or 'read-write'" },
 #endif
+    {"ide", "Gayle/IDE controller: none, a600/a1200 or a4000" },
+    {"ide0_hardfile", "Hardfile for IDE master (needs ide=a600/a1200 or ide=a4000)" },
+    {"ide1_hardfile", "Hardfile for IDE slave" },
+    {"ide0_readonly", "Open IDE master hardfile read-only" },
+    {"ide1_readonly", "Open IDE slave hardfile read-only" },
+    {"cd32cd", "CD32 Akiko CD controller (the CD drive is attached to it)" },
+    {"cd32c2p", "CD32 Akiko chunky-to-planar converter" },
+    {"cd32nvram", "CD32 1 KB NVRAM, saved in flash_file (default PROGDIR:cd32.nvr)" },
+    {"cd_speed", "CD32 drive speed in percent, 0 = as fast as possible" },
 
 #ifdef __amigaos4__
     {"console_output", "console, debug or none" },
@@ -132,6 +142,7 @@ static const char *guimode1[] = { "no", "yes", "nowait", 0 };
 static const char *guimode2[] = { "false", "true", "nowait", 0 };
 static const char *guimode3[] = { "0", "1", "nowait", 0 };
 static const char *csmode[] = { "ocs", "ecs_agnus", "ecs_denise", "ecs", "aga", 0 };
+static const char *idemode[] = { "none", "a600/a1200", "a4000", 0 };
 static const char *linemode1[] = { "none", "double", "scanlines", 0 };
 static const char *linemode2[] = { "n", "d", "s", 0 };
 static const char *speedmode[] = { "max", "real", 0 };
@@ -150,6 +161,7 @@ static const char *interpolmode[] = { "none", "rh", "crux", "sinc", 0 };
 static const char *collmode[] = { "none", "sprites", "playfields", "full", 0 };
 static const char *compmode[] = { "direct", "indirect", "indirectKS", "afterPic", 0 };
 static const char *flushmode[]   = { "soft", "hard", 0 };
+static const char *cdctrl[] = { "uaescsi", "ide0", "ide1", 0 };   /* v16: CD_CTRL_* */
 static const char *kbleds[] = { "none", "POWER", "DF0", "DF1", "DF2", "DF3", "HD", "CD", 0 };
 #ifdef GFXFILTER
 static const char *filtermode1[] = { "no_16", "bilinear_16", "no_32", "bilinear_32", 0 };
@@ -257,6 +269,10 @@ static int match_string (const char *table[], const char *str)
 
 char *cfgfile_subst_path (const char *path, const char *subst, const char *file)
 {
+    /* AmigaOS kennt kein $HOME: getenv() liefert dann NULL (Absturz in strlen). */
+    if (!path || !subst || !file)
+	return my_strdup (file ? file : "");
+
     /* @@@ use strcasecmp for some targets.  */
     if (strlen (path) > 0 && strncmp (file, path, strlen (path)) == 0) {
 	int l;
@@ -393,6 +409,17 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
     for (i = 0; i < MAX_SPARE_DRIVES; i++) {
 	if (p->dfxlist[i][0])
 	    cfgfile_write (f, "diskimage%d=%s\n", i, p->dfxlist[i]);
+    }
+
+    /* v16: CD-ROM image drives (uaescsi.device units) */
+    for (i = 0; i < MAX_CD_DRIVES; i++) {
+	if (p->cddrive[i] || (i == 0 && CD_ON_AKIKO (p)))   /* v17: CD32 drive */
+	    cfgfile_write (f, "cdimage%d=%s\n", i, p->cdimage[i]);
+    }
+    if (p->cddrive[0]) {
+	cfgfile_write (f, "cdimage0_controller=%s\n", cdctrl[p->cd_controller]);
+	cfgfile_write (f, "cdimage0_boot=%s\n", p->cd_boot ? "true" : "false");
+	cfgfile_write (f, "cdimage0_bootpri=%d\n", p->cd_bootpri);
     }
 
     cfgfile_write (f, "nr_floppies=%d\n", p->nr_floppies);
@@ -535,6 +562,8 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
     cfgfile_write (f, "z3mem_size=%d\n", p->z3fastmem_size / 0x100000);
     cfgfile_write (f, "bogomem_size=%d\n", p->bogomem_size / 0x40000);
     cfgfile_write (f, "gfxcard_size=%d\n", p->gfxmem_size / 0x100000);
+    cfgfile_write (f, "gfxcard_hardware_sprite=%s\n", p->rtg_hardwaresprite ? "true" : "false");
+    cfgfile_write (f, "gfxcard_hardware_vblank=%s\n", p->rtg_hardwareinterrupt ? "true" : "false");
     cfgfile_write (f, "chipmem_size=%d\n", (p->chipmem_size == 0x40000) ? 0 : p->chipmem_size / 0x80000);
 
     if (p->m68k_speed > 0)
@@ -564,6 +593,23 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
     cfgfile_write (f, "state_replay_rate=%d\n", p->statecapturerate);
     cfgfile_write (f, "state_replay_buffer=%d\n", p->statecapturebuffersize);
 #endif
+
+    /* v17: CD32 Akiko chip, keys as in WinUAE */
+    cfgfile_write (f, "cd32cd=%s\n", p->cs_cd32cd ? "true" : "false");
+    cfgfile_write (f, "cd32c2p=%s\n", p->cs_cd32c2p ? "true" : "false");
+    cfgfile_write (f, "cd32nvram=%s\n", p->cs_cd32nvram ? "true" : "false");
+    cfgfile_write (f, "cd32nvram_size=%d\n", p->cs_cd32nvram_size / 1024);
+    cfgfile_write (f, "cd_speed=%d\n", p->cd_speed);
+
+    cfgfile_write (f, "ide=%s\n", idemode[p->cs_ide]);
+    if (p->ide_hardfile[0][0])
+	cfgfile_write (f, "ide0_hardfile=%s\n", p->ide_hardfile[0]);
+    if (p->ide_hardfile[1][0])
+	cfgfile_write (f, "ide1_hardfile=%s\n", p->ide_hardfile[1]);
+    if (p->ide_hardfile[0][0] || p->ide_hardfile[1][0]) {
+	cfgfile_write (f, "ide0_readonly=%s\n", p->ide_readonly[0] ? "yes" : "no");
+	cfgfile_write (f, "ide1_readonly=%s\n", p->ide_readonly[1] ? "yes" : "no");
+    }
 
 #ifdef FILESYS
     write_filesys_config (currprefs.mountinfo, UNEXPANDED, prefs_get_attr ("hardfile_path"), f);
@@ -1108,6 +1154,8 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
 	|| cfgfile_yesno (option, value, "comp_constjump", &p->comp_constjump)
 	|| cfgfile_yesno (option, value, "comp_test_consistency", &p->comptestconsistency)
 #endif
+	|| cfgfile_yesno (option, value, "gfxcard_hardware_sprite", &p->rtg_hardwaresprite)
+	|| cfgfile_yesno (option, value, "gfxcard_hardware_vblank", &p->rtg_hardwareinterrupt)
 	|| cfgfile_yesno (option, value, "scsi", &p->scsi))
 	return 1;
 
@@ -1135,6 +1183,18 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
 #endif
     if (cfgfile_strval (option, value, "collision_level", &p->collision_level, collmode, 0))
 	return 1;
+    if (cfgfile_yesno (option, value, "cd32cd", &p->cs_cd32cd)
+	|| cfgfile_yesno (option, value, "cd32c2p", &p->cs_cd32c2p)
+	|| cfgfile_yesno (option, value, "cd32nvram", &p->cs_cd32nvram)
+	|| cfgfile_intval (option, value, "cd32nvram_size", &p->cs_cd32nvram_size, 1024)
+	|| cfgfile_intval (option, value, "cd_speed", &p->cd_speed, 1))
+	return 1;
+    if (cfgfile_strval (option, value, "ide", &p->cs_ide, idemode, 0)
+	|| cfgfile_string (option, value, "ide0_hardfile", p->ide_hardfile[0], 256)
+	|| cfgfile_string (option, value, "ide1_hardfile", p->ide_hardfile[1], 256)
+	|| cfgfile_yesno (option, value, "ide0_readonly", &p->ide_readonly[0])
+	|| cfgfile_yesno (option, value, "ide1_readonly", &p->ide_readonly[1]))
+	return 1;
     if (cfgfile_string (option, value, "kickstart_rom_file", p->romfile, 256)
 	|| cfgfile_string (option, value, "kickstart_ext_rom_file", p->romextfile, 256)
 	|| cfgfile_string (option, value, "kickstart_key_file", p->keyfile, 256)
@@ -1154,6 +1214,20 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
 #if 0
 	    strcpy (p->dfxlist[i], p->df[i]);
 #endif
+	    return 1;
+	}
+    }
+
+    if (cfgfile_strval (option, value, "cdimage0_controller", &p->cd_controller, cdctrl, 0)
+	|| cfgfile_yesno (option, value, "cdimage0_boot", &p->cd_boot)
+	|| cfgfile_intval (option, value, "cdimage0_bootpri", &p->cd_bootpri, 1))
+	return 1;
+
+    /* v16: CD-ROM image drives, "cdimageN=" without a value is an empty drive */
+    for (i = 0; i < MAX_CD_DRIVES; i++) {
+	sprintf (tmpbuf, "cdimage%d", i);
+	if (cfgfile_string (option, value, tmpbuf, p->cdimage[i], 256)) {
+	    p->cddrive[i] = 1;
 	    return 1;
 	}
     }
@@ -2390,10 +2464,17 @@ void default_prefs (struct uae_prefs *p, int type)
     p->keyboard_leds_in_use = 0;
     p->keyboard_leds[0] = p->keyboard_leds[1] = p->keyboard_leds[2] = 0;
     p->scsi = 0;
+    p->cd_bootpri = -127;      /* v16: like WinUAE's CD automount */
     p->cpu_idle = 0;
     p->catweasel_io = 0;
     p->tod_hack = 0;
     p->maprom = 0;
+    p->cs_ide = 0;
+    p->cs_cd32cd = p->cs_cd32c2p = p->cs_cd32nvram = 0;   /* v17 */
+    p->cs_cd32nvram_size = 1024;
+    p->cd_speed = 100;
+    p->ide_hardfile[0][0] = p->ide_hardfile[1][0] = 0;
+    p->ide_readonly[0] = p->ide_readonly[1] = 0;
 
 #ifdef GFXFILTER
     p->gfx_filter = 0;
@@ -2406,7 +2487,9 @@ void default_prefs (struct uae_prefs *p, int type)
     p->df[2][0] = '\0';
     p->df[3][0] = '\0';
 
-    strcpy (p->romfile, "kick.rom");
+    /* v17: no default name - "kick.rom" filled the GUI field, so the ROM
+     * folder of the GUI settings was never used */
+    strcpy (p->romfile, "");
     strcpy (p->keyfile, "");
     strcpy (p->romextfile, "");
     strcpy (p->flashfile, "");
@@ -2438,6 +2521,8 @@ void default_prefs (struct uae_prefs *p, int type)
     p->chipmem_size = 0x00080000;
     p->bogomem_size = 0x00080000;
     p->gfxmem_size = 0x00000000;
+    p->rtg_hardwaresprite = 1;      /* as in WinUAE */
+    p->rtg_hardwareinterrupt = 0;   /* as in WinUAE */
 
     p->nr_floppies = 2;
     p->dfxtype[0] = 0;

@@ -97,6 +97,7 @@ extern const uae_u8 *       sys_command_toc          (int mode, int unitnum);
 extern const uae_u8 *       sys_command_read         (int mode, int unitnum, int offset);
 extern int                  sys_command_write        (int mode, int unitnum, int offset, const uae_u8 *data);
 extern int                  sys_command_scsi_direct  (int unitnum, uaecptr request);
+extern int                  sys_command_exec_out     (int unitnum, const uae_u8 *cmd, int len);
 extern int                  sys_command_open_thread  (int mode, int unitnum);
 extern void                 sys_command_close_thread (int mode, int unitnum);
 

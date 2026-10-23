@@ -1,0 +1,195 @@
+Short:        Amiga emulator with PPC JIT and ReAction GUI
+Author:       Richard Drummond, Almos Rajnai, Kjetil Hvalstrand, Falke_34 et al.
+Uploader:     Falke_34
+Type:         emulation/amiga
+Version:      2.0 (ReAction GUI 1.0, based on E-UAE PPC JIT 1.1.2)
+Requires:     AmigaOS 4.1 Final Edition, AHI, Kickstart ROM image
+Architecture: ppc-amigaos >= 4.1.0
+License:      GPL
+
+
+E-UAE ReAction
+==============
+
+E-UAE is an emulator of the Commodore Amiga for AmigaOS 4.1 PPC, with a
+just-in-time compiler for 68020+ code (PowerPC JIT by Almos Rajnai). This
+release adds a native ReAction configuration GUI and many fixes and new
+features to the AmigaOS 4 version of E-UAE.
+
+E-UAE 2.0.0 with ReAction GUI 1.0 (internal build v17).
+
+It runs on all AmigaOS 4.1 PPC systems (AmigaOne X5000/X1000/A1222,
+Sam440/460, Pegasos II, Classic PPC) and under QEMU.
+
+
+Highlights
+----------
+
+ * ReAction GUI with pages for media, hardware, display, sound, hard
+   disks, input, shortcuts and configuration; tooltips; English and German
+   (locale catalog)
+ * PowerPC JIT compiler, 68000 - 68060, FPU, AGA, Zorro II/III memory
+ * Built-in Picasso96 graphics card (uaegfx.card in the boot ROM, up to
+   128 MB, hardware mouse pointer, VBLANK interrupt)
+ * Hard disks: directories, hardfiles (with RDB), IDE controller of the
+   A600/A1200 (Gayle) and A4000
+ * CD-ROM drive with ISO and CUE/BIN images (also CD audio), at
+   uaescsi.device or as ATAPI drive at the IDE controller; bootable as CD0:
+   with any Kickstart
+ * Amiga CD32: Akiko chip from WinUAE (CD-ROM controller with CD audio,
+   chunky-to-planar converter, NVRAM for game saves), CD32 pad, CD32
+   model preset
+ * Disk images also inside ZIP, GZ, LHA and LZX archives
+ * Create blank floppy disks and hardfiles from the GUI
+ * Configurable hotkeys, savestates, bsdsocket.library emulation
+
+
+Installation
+------------
+
+Copy the drawer anywhere and start E-UAE from its icon. Put your Kickstart
+ROM images into PROGDIR:Roms/ (or choose another folder in Settings).
+
+Kickstart ROMs are NOT included - they are copyrighted. Use the ROMs from
+Amiga Forever or dump them from your own Amiga. The CD32 needs its
+Kickstart and extended ROM (two 512 KB files, or one 1 MB CD32 ROM).
+
+For the graphics card the emulated Amiga needs Picasso96 (rtg.library) and
+the monitor file DEVS:Monitors/UAEGFX; the uaegfx.card itself is built in.
+
+
+Usage notes
+-----------
+
+ * Right mouse button menu of the GUI window: About, Settings, Quit.
+ * Settings: default folders for ROMs, floppies, hardfiles, CD images,
+   configurations and savestates, and the log output (off / window /
+   file PROGDIR:E-UAE.log). Saved in PROGDIR:E-UAE.prefs.
+ * "Save" writes the default configuration, "Save as..." any file
+   (".cfg" is added).
+ * CD-ROM: Hard disks page -> "Add CD-ROM drive...". To boot from CD tick
+   "Boot from CD (mount as CD0:)". Without that option the emulated Amiga
+   needs a CD file system (CDFileSystem, CacheCDFS, ...) and a mount entry;
+   at uaescsi.device: Device = uaescsi.device, Unit = 0, SectorSize = 2048.
+   The ATAPI drive at IDE needs a scsi.device with ATAPI support
+   (Kickstart 3.1.4 / 3.2 or a patched driver). A CD drive alone on the
+   slave position (no master) delays the boot by about 30 seconds, like
+   on real hardware.
+ * CD32: Hardware page -> model preset "CD32 (AGA, 2 MB, Akiko)". On the
+   Media page choose the CD32 Kickstart and extended ROM (or the 1 MB
+   CD32 ROM as Kickstart, extended ROM empty) and the CD image (ISO or
+   CUE/BIN). Discs can be changed while the CD32 runs. Game saves go to
+   PROGDIR:cd32.nvr. The joystick in port 1 is a CD32 pad: buttons 1-7 =
+   red, blue, yellow, green, forward, reverse, play.
+ * Default hotkeys: Ctrl + Alt + Q quit, Ctrl + Alt + S fullscreen,
+   Ctrl + Alt + R reset, Ctrl + Alt + F1..F4 insert disk in DF0..DF3 -
+   all can be changed on the Shortcuts page.
+
+
+History
+-------
+
+v17 (E-UAE 2.0.0, ReAction GUI 1.0)
+ Core:
+  - Amiga CD32: Akiko chip ported from WinUAE - CD-ROM controller (data,
+    CD audio, sub-channel, disc change), chunky-to-planar converter,
+    1 KB NVRAM, CD32 pad
+  - CD32 ROMs: Kickstart + extended ROM, also the 1 MB CD32 ROM in one
+    file
+  - LHA/LZH and LZX archives opened directly (disk images, ROMs)
+ GUI:
+  - CD32 model preset, "CD32 Akiko chip" switch, CD controller
+    "CD32 (Akiko)"
+  - Window stays open after Stop; model presets switch the IDE
+    interface on like real hardware; options without effect on
+    AmigaOS 4 removed
+  - GUI can be iconified (gadget, optional automatically after Start)
+  - Middle mouse button releases the pointer in window mode (option)
+  - Cartridge field (Action Replay, HRTMon) on the Media page
+ Fixes:
+  - "Save" while running saved the running values; backup file only
+    made once
+  - Kickstart field showed "kick.rom" at the first start
+  - uaescsi.device (CD-ROM) was missing after Stop and a new Start
+  - Colours yellow after switching to fullscreen and back
+  - 48000 Hz sound silently became 22000 Hz
+  - bsdsocket.library emulation: crashes (e.g. WHDLoad update check),
+    emulation froze during network calls, several wrong calls
+
+v16
+ Core:
+  - Built-in uaegfx.card (no card file needed), hardware mouse pointer,
+    VBLANK interrupt, BlitRectTransparent
+  - Graphics card memory up to 128 MB (16/32 MB boards were announced as
+    8 MB before)
+  - Faster RTG output: changed lines copied once per frame, window only
+    redrawn when something changed
+  - CD-ROM drive with ISO and CUE/BIN images, CD audio, disc change while
+    running; at uaescsi.device or as ATAPI drive at the IDE controller
+  - Booting from CD: built-in ISO 9660 file system, drive mounted as CD0:
+  - uaescsi.device fixes (unit thread end, request abort, repeated
+    installation in the boot ROM area)
+ GUI:
+  - Real fullscreen switches for Amiga and Picasso96 modes, fullscreen
+    hotkey toggles window / own screen
+  - Graphics card options (hardware pointer, VBLANK)
+  - CD-ROM drive on the Hard disks and Media pages
+  - Menu (About, Settings, Quit) and Settings window (folders, log output)
+ Fixes:
+  - Grey screen left after quitting from an own screen
+  - Status bar showed "CPU 0%" at full load
+
+v15
+ Core:
+  - JIT soft cache flush (keeps unchanged translated code)
+  - JIT is switched off when cycle-exact is enabled (as in WinUAE)
+  - Display was composited twice per frame - up to 8x faster with JIT
+    at maximum CPU speed
+ GUI:
+  - CPU list with 68020/68881 FPU combinations (FPU was silently removed)
+  - Create blank floppy disks and hardfiles (OFS/FFS, PFS3, SFS, RDB)
+  - Hard disks page redesigned: one drive list, separate windows for
+    hardfiles and directories
+ Fixes:
+  - "Load..." did not load the configuration
+  - Model preset recognised after loading
+  - Hotkeys checked the wrong keys (Alt vs. Amiga key), modifier order,
+    stuck keys
+  - "Save as..." adds ".cfg"
+
+v14
+  - Hard disks: RDB hardfiles can be added, one list for UAE and IDE drives
+
+v12 - v13
+  - IDE controller emulation: A600/A1200 (Gayle) and A4000, master/slave
+
+v11
+  - CPU core: exception frames and undefined flags of CHK, CHK2, DIVL,
+    MULL fixed (checked with the UAE CPU tester)
+
+v10
+  - CPU/FPU core fixes (DIVS.W overflow, FPU rounding, FABS, FSCALE, FCMP,
+    FGETEXP, FTRAPcc, FMOVECR constants)
+  - Shortcuts page: hotkeys can be reassigned
+  - LED overlay in 16-bit screen modes
+
+v1 - v9
+  - ReAction GUI, tooltips, locale support (English, German)
+  - Amiga model presets, JIT cache size choice
+  - Fixes: wrong colours, 100% host CPU load while waiting, crash in
+    path handling, empty window without hardware compositing, 68040/68060
+    32-bit only, quitting from the start screen
+
+
+Credits
+-------
+
+ E-UAE                 Richard Drummond, based on UAE by Bernd Schmidt
+ WinUAE (parts, CD32)  Toni Wilen
+ PowerPC JIT           Almos Rajnai
+ AmigaOS 4 updates     Kjetil Hvalstrand (LiveForIt), Fredrik Wikstrom
+                       (salass00), Josef Wegner
+ ReAction GUI, v1-v17  Falke_34
+
+E-UAE is free software under the GNU General Public License, see COPYING.
+More details: README (E-UAE PPC JIT), README_original (E-UAE 0.8.29).

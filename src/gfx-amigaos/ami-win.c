@@ -52,6 +52,7 @@
 /****************************************************************************/
 
 #include <ctype.h>
+#include <strings.h>
 #include <signal.h>
 
 /****************************************************************************/
@@ -224,6 +225,7 @@ struct TagItem tags_public[] = {
 #define UAESM "UAESM"		// env: var for screen mode //
 
 static void graphics_subshutdown (void);
+static void p96_sprite_free (void);
 
 static void open_window(void);
 static void close_window(void);
@@ -297,6 +299,21 @@ static int              XOffset,YOffset;
 
 static int os39;        /* kick 39 present */
 static int usepub;      /* use public screen */
+
+/*
+ * v16: real fullscreen switches. Which screen is used:
+ *  - Amiga display: "Fullscreen (Amiga modes)" (gfx_afullscreen) = own
+ *    screen, otherwise the screen type of the Display page;
+ *  - RTG display: "Fullscreen (Picasso96 modes)" (gfx_pfullscreen) = own
+ *    screen, otherwise the screen type.
+ * When the Amiga switches between its own display and the graphics card,
+ * gfx_set_picasso_state() reopens the display if the other kind of screen
+ * is wanted. The fullscreen gadget / hotkey (toggle_fullscreen()) overrides
+ * both until the emulation is restarted.
+ */
+static int fullscreen_override = -1;   /* UAESCREENTYPE_xxx or -1 */
+static int wanted_screen_type (void);
+static void reopen_display (void);
 static int is_halfbrite;
 static int is_ham;
 
@@ -403,9 +420,333 @@ static struct uae_hotkeyseq ami_hotkeys[] =
     { HOTKEYS_END }
 };
 
+/****************************************************************************
+ *
+ * Hotkey-Verwaltung fuer die GUI (Seite "Shortcuts")
+ *
+ * Die Tabelle ami_hotkeys[] oben bleibt die Standardbelegung. Die GUI kann
+ * einzelne Eintraege aendern (ami_hk_set); gespeichert wird in
+ * PROGDIR:E-UAE.hotkeys, beim Start der Grafikausgabe wird die Datei wieder
+ * eingelesen. Eine Sequenz besteht aus bis zu 3 Sondertasten plus einer Taste;
+ * die Sondertasten koennen in beliebiger Reihenfolge gedrueckt werden, die
+ * Taste kommt zuletzt (match_hotkey_sequence() in hotkeys.c). Geprueft wird
+ * die physische Sondertaste (siehe IDCMP_RAWKEY): "LAlt" = Alt-Taste,
+ * "LAmiga" = linke Amiga-/Windows-Taste.
+ */
+#define HK_MAX       64
+#define HK_FILE      "PROGDIR:E-UAE.hotkeys"
+
+static struct uae_hotkeyseq ami_hotkeys_default[HK_MAX];
+
+/* Tasten, deren Druck an den emulierten Amiga ging (fuer das Loslassen
+ * nach einem Hotkey, siehe IDCMP_RAWKEY) */
+static unsigned char hk_key_sent[128];
+static int hk_inited, hk_count;
+
+static const struct { const char *token; int code; } hk_mods[] = {
+    { "Ctrl", AK_CTRL }, { "LAlt", AK_LALT }, { "RAlt", AK_RALT },
+    { "LAmiga", AK_LAMI }, { "RAmiga", AK_RAMI }, { "LShift", AK_LSH }, { "RShift", AK_RSH }
+};
+#define HK_NMODS ((int)(sizeof hk_mods / sizeof hk_mods[0]))
+
+static const struct { const char *token; const char *label; int event; } hk_actions[] = {
+    { "QUIT",        "Quit E-UAE",                  INPUTEVENT_SPC_QUIT },
+    { "SOFTRESET",   "Soft reset",                  INPUTEVENT_SPC_SOFTRESET },
+    { "HARDRESET",   "Hard reset",                  INPUTEVENT_SPC_HARDRESET },
+    { "DEBUGGER",    "Enter debugger",              INPUTEVENT_SPC_ENTERDEBUGGER },
+    { "FULLSCREEN",  "Toggle fullscreen",           INPUTEVENT_SPC_TOGGLEFULLSCREEN },
+    { "MOUSEGRAB",   "Toggle mouse grab",           INPUTEVENT_SPC_TOGGLEMOUSEGRAB },
+    { "INHIBIT",     "Inhibit screen drawing",      INPUTEVENT_SPC_INHIBITSCREEN },
+    { "SCREENSHOT",  "Screenshot",                  INPUTEVENT_SPC_SCREENSHOT },
+    { "INTERPOL",    "Switch sound interpolation",  INPUTEVENT_SPC_SWITCHINTERPOL },
+    { "FRAMESKIP_UP","Increase frame skip",         INPUTEVENT_SPC_INCRFRAMERATE },
+    { "FRAMESKIP_DN","Decrease frame skip",         INPUTEVENT_SPC_DECRFRAMERATE },
+    { "DF0_INSERT",  "Insert disk in DF0",          INPUTEVENT_SPC_FLOPPY0 },
+    { "DF1_INSERT",  "Insert disk in DF1",          INPUTEVENT_SPC_FLOPPY1 },
+    { "DF2_INSERT",  "Insert disk in DF2",          INPUTEVENT_SPC_FLOPPY2 },
+    { "DF3_INSERT",  "Insert disk in DF3",          INPUTEVENT_SPC_FLOPPY3 },
+    { "DF0_EJECT",   "Eject disk from DF0",         INPUTEVENT_SPC_EFLOPPY0 },
+    { "DF1_EJECT",   "Eject disk from DF1",         INPUTEVENT_SPC_EFLOPPY1 },
+    { "DF2_EJECT",   "Eject disk from DF2",         INPUTEVENT_SPC_EFLOPPY2 },
+    { "DF3_EJECT",   "Eject disk from DF3",         INPUTEVENT_SPC_EFLOPPY3 },
+    { "LOADDIALOG",  "Load savestate (requester)",  INPUTEVENT_SPC_STATERESTOREDIALOG },
+    { "SAVEDIALOG",  "Save savestate (requester)",  INPUTEVENT_SPC_STATESAVEDIALOG },
+    { "LOADSTATE0",  "Load state slot 0",           INPUTEVENT_SPC_STATERESTORE },
+    { "LOADSTATE1",  "Load state slot 1",           INPUTEVENT_SPC_STATERESTORE1 },
+    { "LOADSTATE2",  "Load state slot 2",           INPUTEVENT_SPC_STATERESTORE2 },
+    { "LOADSTATE3",  "Load state slot 3",           INPUTEVENT_SPC_STATERESTORE3 },
+    { "LOADSTATE4",  "Load state slot 4",           INPUTEVENT_SPC_STATERESTORE4 },
+    { "LOADSTATE5",  "Load state slot 5",           INPUTEVENT_SPC_STATERESTORE5 },
+    { "LOADSTATE6",  "Load state slot 6",           INPUTEVENT_SPC_STATERESTORE6 },
+    { "LOADSTATE7",  "Load state slot 7",           INPUTEVENT_SPC_STATERESTORE7 },
+    { "LOADSTATE8",  "Load state slot 8",           INPUTEVENT_SPC_STATERESTORE8 },
+    { "LOADSTATE9",  "Load state slot 9",           INPUTEVENT_SPC_STATERESTORE9 },
+    { "SAVESTATE0",  "Save state slot 0",           INPUTEVENT_SPC_STATESAVE },
+    { "SAVESTATE1",  "Save state slot 1",           INPUTEVENT_SPC_STATESAVE1 },
+    { "SAVESTATE2",  "Save state slot 2",           INPUTEVENT_SPC_STATESAVE2 },
+    { "SAVESTATE3",  "Save state slot 3",           INPUTEVENT_SPC_STATESAVE3 },
+    { "SAVESTATE4",  "Save state slot 4",           INPUTEVENT_SPC_STATESAVE4 },
+    { "SAVESTATE5",  "Save state slot 5",           INPUTEVENT_SPC_STATESAVE5 },
+    { "SAVESTATE6",  "Save state slot 6",           INPUTEVENT_SPC_STATESAVE6 },
+    { "SAVESTATE7",  "Save state slot 7",           INPUTEVENT_SPC_STATESAVE7 },
+    { "SAVESTATE8",  "Save state slot 8",           INPUTEVENT_SPC_STATESAVE8 },
+    { "SAVESTATE9",  "Save state slot 9",           INPUTEVENT_SPC_STATESAVE9 },
+    { "FREEZE",      "Freeze button (cartridge)",   INPUTEVENT_SPC_FREEZEBUTTON },
+};
+#define HK_NACTIONS ((int)(sizeof hk_actions / sizeof hk_actions[0]))
+
+static const struct { const char *name; int code; } hk_keys[] = {
+    { "A", AK_A }, { "B", AK_B }, { "C", AK_C }, { "D", AK_D }, { "E", AK_E }, { "F", AK_F },
+    { "G", AK_G }, { "H", AK_H }, { "I", AK_I }, { "J", AK_J }, { "K", AK_K }, { "L", AK_L },
+    { "M", AK_M }, { "N", AK_N }, { "O", AK_O }, { "P", AK_P }, { "Q", AK_Q }, { "R", AK_R },
+    { "S", AK_S }, { "T", AK_T }, { "U", AK_U }, { "V", AK_V }, { "W", AK_W }, { "X", AK_X },
+    { "Y", AK_Y }, { "Z", AK_Z },
+    { "0", AK_0 }, { "1", AK_1 }, { "2", AK_2 }, { "3", AK_3 }, { "4", AK_4 },
+    { "5", AK_5 }, { "6", AK_6 }, { "7", AK_7 }, { "8", AK_8 }, { "9", AK_9 },
+    { "F1", AK_F1 }, { "F2", AK_F2 }, { "F3", AK_F3 }, { "F4", AK_F4 }, { "F5", AK_F5 },
+    { "F6", AK_F6 }, { "F7", AK_F7 }, { "F8", AK_F8 }, { "F9", AK_F9 }, { "F10", AK_F10 },
+    { "NP0", AK_NP0 }, { "NP1", AK_NP1 }, { "NP2", AK_NP2 }, { "NP3", AK_NP3 }, { "NP4", AK_NP4 },
+    { "NP5", AK_NP5 }, { "NP6", AK_NP6 }, { "NP7", AK_NP7 }, { "NP8", AK_NP8 }, { "NP9", AK_NP9 },
+    { "NP+", AK_NPADD }, { "NP-", AK_NPSUB }, { "NP*", AK_NPMUL }, { "NP/", AK_NPDIV }, { "NP.", AK_NPDEL },
+    { "Up", AK_UP }, { "Down", AK_DN }, { "Left", AK_LF }, { "Right", AK_RT },
+    { "Space", AK_SPC }, { "Backspace", AK_BS }, { "Tab", AK_TAB }, { "Enter", AK_ENT },
+    { "Return", AK_RET }, { "Esc", AK_ESC }, { "Del", AK_DEL }, { "Help", AK_HELP },
+    { "[", AK_LBRACKET }, { "]", AK_RBRACKET }, { ";", AK_SEMICOLON }, { ",", AK_COMMA },
+    { ".", AK_PERIOD }, { "/", AK_SLASH }, { "\\", AK_BACKSLASH }, { "'", AK_QUOTE },
+    { "#", AK_NUMBERSIGN }, { "<", AK_LTGT }, { "`", AK_BACKQUOTE }, { "-", AK_MINUS }, { "=", AK_EQUAL }
+};
+#define HK_NKEYS ((int)(sizeof hk_keys / sizeof hk_keys[0]))
+
+static void hk_init (void)
+{
+    int n = 0;
+
+    if (hk_inited)
+	return;
+    while (ami_hotkeys[n].event && n < HK_MAX - 1)
+	n++;
+    memcpy (ami_hotkeys_default, ami_hotkeys, (n + 1) * sizeof ami_hotkeys[0]);
+    hk_count  = n;
+    hk_inited = 1;
+}
+
+static int hk_action_index (int event)
+{
+    int i;
+    for (i = 0; i < HK_NACTIONS; i++)
+	if (hk_actions[i].event == event)
+	    return i;
+    return -1;
+}
+
+int ami_hk_count (void)
+{
+    hk_init ();
+    return hk_count;
+}
+
+const char *ami_hk_label (int i)
+{
+    int a;
+    hk_init ();
+    if (i < 0 || i >= hk_count)
+	return "";
+    a = hk_action_index (ami_hotkeys[i].event);
+    return a >= 0 ? hk_actions[a].label : "?";
+}
+
+/* mods: Bitmaske (Bit n = hk_mods[n]); key: Tastencode oder -1 */
+void ami_hk_get (int i, int *mods, int *key)
+{
+    int j, k, m = 0, last = -1;
+
+    hk_init ();
+    *mods = 0;
+    *key  = -1;
+    if (i < 0 || i >= hk_count)
+	return;
+    for (j = 0; j < HOTKEYSEQ_MAXKEYS; j++) {
+	uae_u16 c = ami_hotkeys[i].keyseq[j];
+	int is_mod = 0;
+
+	if (c == (uae_u16) -1)
+	    break;
+	for (k = 0; k < HK_NMODS; k++)
+	    if (hk_mods[k].code == c) {
+		m |= 1 << k;
+		is_mod = 1;
+	    }
+	if (!is_mod)
+	    last = c;
+    }
+    *mods = m;
+    *key  = last;
+}
+
+/* 0 = ok, -1 = ungueltig (keine Taste / mehr als 3 Sondertasten),
+ * -2 = keine Sondertaste (normale Tasten wuerden dem Amiga weggenommen) */
+int ami_hk_set (int i, int mods, int key)
+{
+    uae_u16 seq[HOTKEYSEQ_MAXKEYS];
+    int j, n = 0;
+
+    hk_init ();
+    if (i < 0 || i >= hk_count || key < 0)
+	return -1;
+    if (!(mods & ((1 << HK_NMODS) - 1)))
+	return -2;
+    for (j = 0; j < HK_NMODS; j++)
+	if (mods & (1 << j)) {
+	    if (n >= HOTKEYSEQ_MAXKEYS - 1)
+		return -1;
+	    seq[n++] = hk_mods[j].code;
+	}
+    seq[n++] = key;
+    for (j = n; j < HOTKEYSEQ_MAXKEYS; j++)
+	seq[j] = (uae_u16) -1;
+    for (j = 0; j < HOTKEYSEQ_MAXKEYS; j++)
+	ami_hotkeys[i].keyseq[j] = seq[j];
+    reset_hotkeys ();
+    return 0;
+}
+
+/* Index eines anderen Eintrags mit derselben Kombination oder -1 */
+int ami_hk_find (int mods, int key, int exclude)
+{
+    int i, m, k;
+
+    hk_init ();
+    for (i = 0; i < hk_count; i++) {
+	if (i == exclude)
+	    continue;
+	ami_hk_get (i, &m, &k);
+	if (m == mods && k == key)
+	    return i;
+    }
+    return -1;
+}
+
+void ami_hk_default (int i)
+{
+    hk_init ();
+    if (i < 0 || i >= hk_count)
+	return;
+    memcpy (ami_hotkeys[i].keyseq, ami_hotkeys_default[i].keyseq, sizeof ami_hotkeys[i].keyseq);
+    reset_hotkeys ();
+}
+
+void ami_hk_default_all (void)
+{
+    int i;
+    hk_init ();
+    for (i = 0; i < hk_count; i++)
+	ami_hk_default (i);
+}
+
+int ami_hk_nkeys (void)                     { return HK_NKEYS; }
+const char *ami_hk_keyname_at (int n)       { return n >= 0 && n < HK_NKEYS ? hk_keys[n].name : ""; }
+int ami_hk_keycode_at (int n)               { return n >= 0 && n < HK_NKEYS ? hk_keys[n].code : -1; }
+
+const char *ami_hk_keyname (int code)
+{
+    int i;
+    for (i = 0; i < HK_NKEYS; i++)
+	if (hk_keys[i].code == code)
+	    return hk_keys[i].name;
+    return "?";
+}
+
+/* Datei: eine Zeile je Eintrag, z. B.  "QUIT: Ctrl LAlt Q" */
+int ami_hk_save (void)
+{
+    FILE *f;
+    int i;
+
+    hk_init ();
+    f = fopen (HK_FILE, "w");
+    if (!f)
+	return -1;
+    fprintf (f, "; E-UAE hotkeys (edited on the Shortcuts page of the GUI).\n"
+		"; Format:  ACTION: modifiers... key   (modifiers: Ctrl LAlt RAlt LAmiga RAmiga LShift RShift)\n");
+    for (i = 0; i < hk_count; i++) {
+	int a = hk_action_index (ami_hotkeys[i].event), m, k, j;
+
+	if (a < 0)
+	    continue;
+	ami_hk_get (i, &m, &k);
+	fprintf (f, "%s:", hk_actions[a].token);
+	for (j = 0; j < HK_NMODS; j++)
+	    if (m & (1 << j))
+		fprintf (f, " %s", hk_mods[j].token);
+	fprintf (f, " %s\n", ami_hk_keyname (k));
+    }
+    return fclose (f) == 0 ? 0 : -1;
+}
+
+/* Fehlt die Datei, bleibt die Standardbelegung. Ungueltige Zeilen werden ignoriert. */
+int ami_hk_load (void)
+{
+    FILE *f;
+    char line[160];
+
+    hk_init ();
+    f = fopen (HK_FILE, "r");
+    if (!f)
+	return 0;
+    while (fgets (line, sizeof line, f)) {
+	char *p = line, *colon, *word;
+	int a, i, mods = 0, key = -1, ok = 1;
+
+	if (*p == ';' || *p == '\n' || *p == '\r' || *p == '#')
+	    continue;
+	colon = strchr (p, ':');
+	if (!colon)
+	    continue;
+	*colon = '\0';
+	while (*p == ' ' || *p == '\t')
+	    p++;
+	for (a = 0; a < HK_NACTIONS; a++)
+	    if (strcasecmp (p, hk_actions[a].token) == 0)
+		break;
+	if (a == HK_NACTIONS)
+	    continue;
+	for (i = 0; i < hk_count; i++)
+	    if (ami_hotkeys[i].event == hk_actions[a].event)
+		break;
+	if (i == hk_count)
+	    continue;
+
+	p = colon + 1;
+	while ((word = strtok (p, " \t\r\n")) != NULL) {
+	    int k, found = 0;
+
+	    p = NULL;
+	    for (k = 0; k < HK_NMODS && !found; k++)
+		if (strcasecmp (word, hk_mods[k].token) == 0) {
+		    mods |= 1 << k;
+		    found = 1;
+		}
+	    for (k = 0; k < HK_NKEYS && !found; k++)
+		if (strcasecmp (word, hk_keys[k].name) == 0) {
+		    key = hk_keys[k].code;
+		    found = 1;
+		}
+	    if (!found)
+		ok = 0;
+	}
+	if (ok && key >= 0)
+	    ami_hk_set (i, mods, key);
+    }
+    fclose (f);
+    return 1;
+}
+
 /****************************************************************************/
 
 bool p96_gfx_updated = false;
+/* v16: composite the RTG picture at the next frame even if nothing changed
+ * (window opened, resized, refreshed, screen switched) */
+bool p96_force_present = true;
 bool p96_palette_updated = false;
 bool p96_update_format = false;
 
@@ -747,6 +1088,12 @@ static int init_true_colors_output (const struct RastPort *rp)
 
 	pixfmt = GetBitMapAttr (rp->BitMap, (LONG)BMA_PIXELFORMAT);
 
+	/* v17: only the 16-bit PC formats set this - reset it for every new
+	 * output, else it stayed on after a 16-bit PC screen (e.g. fullscreen
+	 * on a Radeon) and the next 32-bit window got byte-swapped colours
+	 * (blue lost, red/green swapped: everything yellow) */
+	byte_swap_16bit = FALSE;
+
 	switch (pixfmt)
 	{
 #ifdef WORDS_BIGENDIAN
@@ -814,6 +1161,9 @@ static int init_true_colors_output (const struct RastPort *rp)
 			 0, 0, 0, byte_swap_16bit);
 
 		write_log ("AMIGFX: Using a %d-bit true-colour display.\n", redbits + greenbits + bluebits);
+		write_log ("AMIGFX: pixfmt %d, shifts r%d g%d b%d, byteswap %d, COMP_FMT_SRC %lu, linedbl %d\n",
+			   pixfmt, redshift, greenshift, blueshift, (int) byte_swap_16bit,
+			   (unsigned long) COMP_FMT_SRC, (int) currprefs.gfx_linedbl);
 	}
 	else write_log ("AMIGFX: Unsupported pixel format.\n");
 
@@ -1075,6 +1425,51 @@ static POINTER_STATE get_pointer_state (const struct Window *w, int mousex, int 
 	}
     }
     return new_state;
+}
+
+/*
+ * v17: middle mouse button in window mode - end the mouse grab, show the
+ * Workbench pointer and make another window on the screen active (the
+ * backdrop/desktop window if there is one), so UAE no longer gets input.
+ * The window is only chosen under the IBase lock; ActivateWindow() is
+ * called after unlocking (Intuition functions must not run under it).
+ */
+static int middle_released;
+
+static void release_window (void)
+{
+	struct Window *w, *pick = NULL, *other = NULL;
+	ULONG lock;
+
+	if (!W)
+		return;
+#ifdef __amigaos4__
+	if (mouseGrabbed) {
+		mouseGrabbed = 0;
+		grab_pointer (W);
+	}
+#endif
+	show_pointer (W);
+	pointer_state = DONT_KNOW;
+	setmousebuttonstate (0, 2, 0);
+
+	lock = LockIBase (0);
+	for (w = W->WScreen->FirstWindow; w; w = w->NextWindow) {
+		if (w == W)
+			continue;
+		if (w->Flags & WFLG_BACKDROP) {
+			pick = w;
+			break;
+		}
+		if (!other)
+			other = w;
+	}
+	if (!pick)
+		pick = other;
+	UnlockIBase (lock);
+
+	if (pick)
+		ActivateWindow (pick);
 }
 
 /****************************************************************************/
@@ -1371,9 +1766,25 @@ bool alloc_p96_draw_bitmap( struct BitMap *dest_bm, int w, int h, int src_depth 
 }
 
 
+/* Gesetzt von init_aga_comp(): Quelle fuer CompositeTags() immer als 32 Bit ARGB */
+static int comp_force_argb32;
+
 int init_comp_one( struct Window *W, ULONG output_depth, struct RastPort *rp, int w, int h )
 {
-	rp -> BitMap = AllocBitMap( w,h, output_depth == 32 ? 24 :output_depth , BMF_DISPLAYABLE, W -> RPort -> BitMap);
+	ULONG dest_fmt = GetBitMapAttr( W -> RPort -> BitMap, BMA_PIXELFORMAT );
+
+	if (comp_force_argb32 && output_depth == 24 && (dest_fmt == PIXF_R8G8B8 || dest_fmt == PIXF_B8G8R8))
+	{
+		/* Gepacktes 24-Bit-Ziel (3 Byte/Pixel): die Zeichenroutinen kennen nur
+		 * 16/32 Bit. Quelle bleibt 32 Bit ARGB, CompositeTags() konvertiert. */
+		write_log( "AMIGFX: packed 24 bit screen (pixel format %lu): using 32 bit ARGB source bitmap.\n", (unsigned long) dest_fmt );
+		rp -> BitMap = AllocBitMapTags( w, h, 32,
+				BMATags_PixelFormat, PIXF_A8R8G8B8,
+				BMATags_Displayable, FALSE,
+				TAG_DONE );
+	}
+	else
+		rp -> BitMap = AllocBitMap( w,h, output_depth == 32 ? 24 :output_depth , BMF_DISPLAYABLE, W -> RPort -> BitMap);
 	
 	if (rp -> BitMap)
 	{
@@ -1627,7 +2038,35 @@ void init_aga_comp( ULONG output_depth )
 		case 32:	COMP_FMT_SRC = PIXF_A8R8G8B8; break;
 	}
 
+	comp_force_argb32 = 1;
 	init_comp_one( W,  output_depth, &comp_aga_RP, gfxvidinfo.width, gfxvidinfo.height  );
+	comp_force_argb32 = 0;
+
+	/* Die Farbwerte werden spaeter fuer das TATSAECHLICHE Pixelformat des
+	 * Compositing-Bitmaps berechnet (init_true_colors_output). Das Format fuer
+	 * WritePixelArray() muss dazu passen, sonst sind Farbkanaele vertauscht. */
+	if (output_depth > 8 && comp_aga_RP.BitMap)
+	{
+		ULONG f = GetBitMapAttr (comp_aga_RP.BitMap, BMA_PIXELFORMAT);
+
+		write_log ("AMIGFX: comp bitmap pixel format %lu (source format was %lu)\n",
+			(unsigned long) f, (unsigned long) COMP_FMT_SRC);
+		switch (f)
+		{
+			case PIXF_A8R8G8B8:
+			case PIXF_B8G8R8A8:
+			case PIXF_R8G8B8A8:
+			case PIXF_R5G6B5:
+			case PIXF_R5G6B5PC:
+			case PIXF_R5G5B5:
+			case PIXF_R5G5B5PC:
+				COMP_FMT_SRC = f;
+				break;
+			default:
+				break;
+		}
+	}
+
 	update_fullscreen_rect( currprefs.gfx_correct_aspect );
 }
 
@@ -1641,6 +2080,7 @@ void reset_p96_fn_pointers( void )
 void init_comp( struct Window *W )
 {
 	reset_p96_fn_pointers() ;
+	p96_force_present = true;	/* v16: new window / bitmaps */
 
 	if (W == NULL)
 	{
@@ -1999,9 +2439,57 @@ int graphics_setup (void)
 	init_pointer ();
 	initpseudodevices ();
 
-	atexit (graphics_leave);
+	{
+		/* register only once: graphics_setup() runs on every start */
+		static int atexit_done;
+		if (!atexit_done) {
+			atexit (graphics_leave);
+			atexit_done = 1;
+		}
+	}
+	fullscreen_override = -1;
 
 	return 1;
+}
+
+static int wanted_screen_type (void)
+{
+	int fs;
+
+	if (fullscreen_override >= 0)
+		return fullscreen_override;
+	fs = screen_is_picasso ? currprefs.gfx_pfullscreen : currprefs.gfx_afullscreen;
+	if (fs)
+		return UAESCREENTYPE_CUSTOM;
+	return currprefs.amiga_screen_type;
+}
+
+/* Close and open the display again (other kind of screen). */
+static void reopen_display (void)
+{
+	graphics_leave ();
+	init_pointer ();
+	initpseudodevices ();
+	XOffset = 0;
+	YOffset = 0;
+	if (!graphics_init ())
+		write_log ("AMIGFX: could not open the display again\n");
+	notice_screen_contents_lost ();
+	notice_new_xcolors ();
+}
+
+/* After an Amiga <-> RTG switch: is the other kind of screen wanted?
+ * "Ask at startup" never opens the screen mode requester here. */
+static int display_needs_reopen (void)
+{
+	int t;
+
+	if (fullscreen_override >= 0)
+		return 0;
+	t = wanted_screen_type ();
+	if (usepub)
+		return t == UAESCREENTYPE_CUSTOM;
+	return t == UAESCREENTYPE_PUBLIC;
 }
 
 /****************************************************************************/
@@ -2250,6 +2738,7 @@ static int graphics_subinit (void)
 	}
 
 	set_default_hotkeys (ami_hotkeys);
+	ami_hk_load ();		/* eigene Belegung aus PROGDIR:E-UAE.hotkeys */
 	pointer_state = DONT_KNOW;
 
 	if (set_palette_on_vbl_fn) set_palette_on_vbl_fn( picasso96_state.CLUT, 0);
@@ -2315,7 +2804,13 @@ int graphics_init (void)
 	reset_p96_fn_pointers();
 	initialize_gfxvidinfo_width_height();
 
-	switch (currprefs.amiga_screen_type)
+	/* Bei jedem Start neu bestimmen: usepub blieb nach einem Lauf im
+	 * Fenster auf 1 stehen, graphics_leave() hielt einen spaeter
+	 * geoeffneten eigenen Screen dann fuer die Workbench und schloss ihn
+	 * nicht (grauer Screen hinter der WB nach dem Beenden). */
+	usepub = 0;
+
+	switch (wanted_screen_type ())
 	{
 		case UAESCREENTYPE_ASK:
 
@@ -2408,6 +2903,7 @@ static void graphics_subshutdown (void)
 	sf(FreeBitMap,conv_p96_RP.BitMap);
 	sf(FreeBitMap,comp_p96_RP.BitMap);
 	sf(FreeBitMap,comp_aga_RP.BitMap);
+	p96_sprite_free ();
 
 	draw_p96_RP = NULL;
 }
@@ -2437,8 +2933,11 @@ void graphics_leave (void)
 				Delay (50);
 			while (!CloseScreen (S));
 		}
-		S = NULL;
 	}
+	/* Auf der Workbench gehoert S nicht uns (nur gesperrt und wieder
+	 * freigegeben) - in beiden Faellen vergessen. */
+	S = NULL;
+	usepub = 0;
 }
 
 /****************************************************************************/
@@ -2621,11 +3120,13 @@ void handle_events(void)
 		{
 			case IDCMP_NEWSIZE:
 //				do_inhibit_frame ((W->Flags & WFLG_ZOOMED) ? 1 : 0);
+				p96_force_present = true;
 				break;
 
 			case IDCMP_REFRESHWINDOW:
 
 				if (screen_is_picasso == 0) 	refresh_aga();
+				p96_force_present = true;
 				break;
 
 			case IDCMP_GADGETUP:
@@ -2655,7 +3156,9 @@ void handle_events(void)
 
 			case IDCMP_CLOSEWINDOW:
 
-				uae_quit ();
+				/* Wie der "Stop"-Knopf der GUI: Emulation beenden und zurueck
+				 * zur Konfiguration - NICHT das ganze Programm beenden. */
+				uae_restart (-1, NULL);
 				break;
 
 			case IDCMP_RAWKEY: 
@@ -2664,7 +3167,18 @@ void handle_events(void)
 					int state   = code & 128 ? 0 : 1;
 					int ievent;
 
+					int hkcode;
+
 					keycode = remap_scancode[code];
+
+					/* Hotkeys: Sondertasten (0x60..0x67) nach der physischen
+					 * Taste pruefen, nicht nach der Umbelegung oben
+					 * (remap_scancode tauscht Alt und Amiga/Windows-Taste fuer
+					 * den emulierten Amiga). Sonst waere "Ctrl + Left Alt + Q"
+					 * in Wirklichkeit Ctrl + linke Amiga/Windows-Taste + Q. */
+					hkcode = code & 0x7f;
+					if (hkcode < 0x60 || hkcode > 0x67)
+						hkcode = (unsigned char) keycode & 0x7f;
 
 //					printf("pc rawkey %02x, amiga rawkey %02x\n",code,keycode);
 
@@ -2672,10 +3186,19 @@ void handle_events(void)
 					{
 						/* We just want key up/down events - not repeats */
 
-						if ((ievent = match_hotkey_sequence (keycode, state)))
+						if ((ievent = match_hotkey_sequence (hkcode, state))) {
 							handle_hotkey_event (ievent, state);
-						else
+							/* Loslassen einer Sondertaste, deren Druck der
+							 * Amiga bekommen hat, trotzdem weitergeben -
+							 * sonst bleibt z. B. Ctrl im Amiga gedrueckt. */
+							if (!state && hk_key_sent[keycode & 0x7f]) {
+								hk_key_sent[keycode & 0x7f] = 0;
+								inputdevice_do_keyboard (keycode, 0);
+							}
+						} else {
+							hk_key_sent[keycode & 0x7f] = state ? 1 : 0;
 							inputdevice_do_keyboard (keycode, state);
+						}
 					}
 				 }
 				break;
@@ -2700,8 +3223,18 @@ void handle_events(void)
 			case IDCMP_MOUSEBUTTONS:
 				if (code == SELECTDOWN) setmousebuttonstate (0, 0, 1);
 				if (code == SELECTUP)   setmousebuttonstate (0, 0, 0);
-				if (code == MIDDLEDOWN) setmousebuttonstate (0, 2, 1);
-				if (code == MIDDLEUP)   setmousebuttonstate (0, 2, 0);
+				/* v17: in window mode the middle button can give the
+				 * pointer back to Workbench instead of the Amiga */
+				if (code == MIDDLEDOWN && usepub && !is_fullscreen_state
+				    && changed_prefs.amiga_middle_release) {
+					middle_released = 1;
+					release_window ();
+				} else if (code == MIDDLEUP && middle_released) {
+					middle_released = 0;
+				} else {
+					if (code == MIDDLEDOWN) setmousebuttonstate (0, 2, 1);
+					if (code == MIDDLEUP)   setmousebuttonstate (0, 2, 0);
+				}
 				if (code == MENUDOWN)   setmousebuttonstate (0, 1, 1);
 				if (code == MENUUP)     setmousebuttonstate (0, 1, 0);
 				break;
@@ -2716,6 +3249,7 @@ void handle_events(void)
 				break;
 
 			case IDCMP_ACTIVEWINDOW:
+				p96_force_present = true;
 				/* When window regains focus (presumably after losing focus at some
 				 * point) UAE needs to know any keys that have changed state in between.
 				 * A simple fix is just to tell UAE that all keys have been released.
@@ -2724,6 +3258,7 @@ void handle_events(void)
 				inputdevice_acquire ();
 				inputdevice_release_all_keys ();
 				reset_hotkeys ();
+				memset (hk_key_sent, 0, sizeof hk_key_sent);
 				break;
 
 			case IDCMP_INACTIVEWINDOW:
@@ -3142,10 +3677,23 @@ static void set_window_for_picasso (void)
 	
 	picasso96_state.RGBFormat = picasso_vidinfo.rgbformat;
 
-	graphics_subshutdown();
 	current_width = picasso_vidinfo.width;
 	current_height = picasso_vidinfo.height;
 	current_depth = picasso_vidinfo.depth;
+
+	/* own screen for RTG ("Fullscreen (Picasso96 modes)") that is smaller
+	 * than the new RTG mode: open a fitting screen */
+	if (screen_is_picasso && !usepub && S && fullscreen_override < 0
+	    && currprefs.gfx_pfullscreen
+	    && (S->Width < picasso_vidinfo.width || S->Height < picasso_vidinfo.height))
+	{
+		write_log ("AMIGFX: RTG mode %dx%d larger than the screen - reopening\n",
+			   picasso_vidinfo.width, picasso_vidinfo.height);
+		reopen_display ();
+		return;
+	}
+
+	graphics_subshutdown();
 	graphics_subinit();
 }
 
@@ -3186,6 +3734,8 @@ void gfx_set_picasso_state (int on)
 {
 	DEBUG_LOG ("Function: gfx_set_picasso_state: %d\n", on);
 
+	p96_force_present = true;	/* v16 */
+
 	if (on == screen_is_picasso)
 	{
 		return;
@@ -3200,7 +3750,6 @@ void gfx_set_picasso_state (int on)
 		return;
 	}
 
-	graphics_subshutdown ();
 	screen_was_picasso = screen_is_picasso;
 	screen_is_picasso = on;
 
@@ -3210,7 +3759,6 @@ void gfx_set_picasso_state (int on)
 		current_width  = picasso_vidinfo.width;
 		current_height = picasso_vidinfo.height;
 		current_depth = picasso_vidinfo.depth;
-		graphics_subinit ();
 	}
 	else
 	{
@@ -3218,6 +3766,17 @@ void gfx_set_picasso_state (int on)
 		current_width  = gfxvidinfo.width;
 		current_height = gfxvidinfo.height;
 		current_depth = 0;
+	}
+
+	if (display_needs_reopen ())
+	{
+		write_log ("AMIGFX: %s display wants %s - reopening\n", on ? "RTG" : "Amiga",
+			   usepub ? "an own screen" : "a window");
+		reopen_display ();
+	}
+	else
+	{
+		graphics_subshutdown ();
 		graphics_subinit ();
 	}
 
@@ -3626,7 +4185,128 @@ void p96_conv_all()
 int every = 0;
 #endif
 
-int is_vsync (void)
+/*
+ * Present the emulated picture: Picasso96 format/palette update and
+ * conversion, then BackFill_Func() (CompositeTags into the window).
+ *
+ * Called exactly once per frame from vsync_handler() in custom.c, after
+ * vsync_handle_redraw() has flushed the last lines of the frame.
+ *
+ * This used to be the body of is_vsync(). The core calls is_vsync() as a
+ * pure query in several places (custom.c, drawing.c, audio.c), so the
+ * whole frame was composited twice whenever a frame had no changed lines
+ * (e.g. static screen without the LED status line). With the JIT and CPU
+ * speed "Maximum" the 68k only gets the host time left over in the frame,
+ * so the second composite made the emulation up to ~8x slower.
+ */
+/*
+ * v16: hardware sprite (mouse pointer) of the uaegfx card (picasso96.c keeps
+ * image, colours and position). The pointer is mixed into the output by a
+ * second composite over the RTG picture (BackFill_Sprite() in comp.c). With
+ * an 8 bit (CLUT) host screen there is no composite; the card then does not
+ * offer a hardware sprite and Picasso96 draws its software pointer.
+ */
+extern void BackFill_Sprite (struct BitMap *bm, int w, int h, int x, int y);
+
+static struct BitMap *p96_sprite_bm;
+static uae_u32        p96_sprite_serial;
+static int            p96_sprite_built;
+
+int gfx_rtg_sprite_supported (void)
+{
+	return W && W->RPort && W->RPort->BitMap
+		&& GetBitMapAttr (W->RPort->BitMap, BMA_DEPTH) > 8;
+}
+
+static void p96_sprite_free (void)
+{
+	if (p96_sprite_bm)
+	{
+		WaitBlit ();
+		FreeBitMap (p96_sprite_bm);
+		p96_sprite_bm = NULL;
+	}
+	p96_sprite_built = 0;
+}
+
+static int p96_sprite_build (void)
+{
+	struct picasso96_sprite *spr = &picasso96_sprite;
+	APTR lock;
+	uae_u8 *base = NULL;
+	ULONG bpr = 0;
+	int x, y;
+
+	if (!p96_sprite_bm)
+	{
+		/* video memory first (hardware composite), else normal memory */
+		p96_sprite_bm = AllocBitMapTags (P96_SPRITE_MAXWIDTH, P96_SPRITE_MAXHEIGHT, 32,
+				BMATags_PixelFormat, PIXF_A8R8G8B8,
+				BMATags_Displayable, TRUE,
+				TAG_DONE);
+		if (!p96_sprite_bm)
+			p96_sprite_bm = AllocBitMapTags (P96_SPRITE_MAXWIDTH, P96_SPRITE_MAXHEIGHT, 32,
+					BMATags_PixelFormat, PIXF_A8R8G8B8,
+					BMATags_Displayable, FALSE,
+					TAG_DONE);
+		if (!p96_sprite_bm)
+		{
+			write_log ("AMIGFX: no bitmap for the RTG mouse pointer\n");
+			return 0;
+		}
+		p96_sprite_built = 0;
+	}
+
+	if (p96_sprite_built && p96_sprite_serial == spr->serial)
+		return 1;
+
+	lock = IGraphics -> LockBitMapTags (p96_sprite_bm,
+			LBM_BaseAddress, (APTR *) &base,
+			LBM_BytesPerRow, &bpr,
+			TAG_END);
+	if (!lock || !base)
+	{
+		if (lock)
+			IGraphics -> UnlockBitMap (lock);
+		return 0;
+	}
+	for (y = 0; y < P96_SPRITE_MAXHEIGHT; y++)
+	{
+		uae_u8 *d = base + y * bpr;
+		for (x = 0; x < P96_SPRITE_MAXWIDTH; x++, d += 4)
+		{
+			int pen = (x < spr->width && y < spr->height)
+				? spr->pixels[y * P96_SPRITE_MAXWIDTH + x] & 3 : 0;
+			uae_u32 c = pen ? (0xff000000 | (spr->colors[pen] & 0x00ffffff)) : 0;
+			/* PIXF_A8R8G8B8: bytes A, R, G, B */
+			d[0] = c >> 24; d[1] = c >> 16; d[2] = c >> 8; d[3] = c;
+		}
+	}
+	IGraphics -> UnlockBitMap (lock);
+
+	p96_sprite_serial = spr->serial;
+	p96_sprite_built = 1;
+	return 1;
+}
+
+static void p96_sprite_draw (void)
+{
+	struct picasso96_sprite *spr = &picasso96_sprite;
+	static int warned;
+
+	if (!spr->enabled || !spr->visible || !spr->valid)
+		return;
+	if (!gfx_rtg_sprite_supported ())
+	{
+		if (!warned++)
+			write_log ("AMIGFX: RTG mouse pointer not shown on an 8 bit host screen\n");
+		return;
+	}
+	if (p96_sprite_build ())
+		BackFill_Sprite (p96_sprite_bm, spr->width, spr->height, spr->x, spr->y);
+}
+
+void amiga_gfx_present (void)
 {
 
 #if debug_vsync_time
@@ -3672,13 +4352,42 @@ int is_vsync (void)
 				p96_palette_updated = false;
 			}
 
-			if (p96_gfx_updated)
 			{
-				if (p96_conv_fn) p96_conv_all();
-				p96_gfx_updated = false;
-			}
+				/* v16: composite only when something changed: picture,
+				 * mouse pointer, window (p96_force_present), or once a
+				 * second as a safety net. A static RTG screen (most of
+				 * the time on a Workbench) no longer costs a composite of
+				 * the whole window every frame. */
+				struct picasso96_sprite *spr = &picasso96_sprite;
+				static int last_x, last_y, last_vis = -1, idle_frames;
+				static uae_u32 last_serial;
+				int vis = spr->enabled && spr->visible && spr->valid;
+				int need = p96_gfx_updated || p96_force_present;
 
-			BackFill_Func(NULL, NULL);
+				if (vis != last_vis || (vis && (spr->x != last_x || spr->y != last_y
+								  || spr->serial != last_serial)))
+					need = 1;
+				if (++idle_frames >= 50)
+					need = 1;
+
+				if (p96_gfx_updated)
+				{
+					if (p96_conv_fn) p96_conv_all();
+					p96_gfx_updated = false;
+				}
+
+				if (need)
+				{
+					BackFill_Func(NULL, NULL);
+					p96_sprite_draw ();
+					p96_force_present = false;
+					idle_frames = 0;
+					last_vis = vis;
+					last_x = spr->x;
+					last_y = spr->y;
+					last_serial = spr->serial;
+				}
+			}
 		}
 		else
 		{
@@ -3718,23 +4427,24 @@ int is_vsync (void)
 
 #endif
 
+	return;
+}
+
+/* Vsync mode is not supported by this backend; this is a pure query
+ * without side effects (see amiga_gfx_present()). */
+int is_vsync (void)
+{
 	return 0;
 }
 
 void toggle_fullscreen (void)
 {
-	is_fullscreen_state = is_fullscreen_state ? FALSE : TRUE;
-
-	graphics_leave ();
-	currprefs.amiga_screen_type = 2;
-	notice_screen_contents_lost ();
-	XOffset = 0;
-	YOffset = 0;
-	usepub = 0;
-
-	graphics_setup();
-	graphics_init ();
-	notice_new_xcolors();
+	/* v16: from a window to an own screen (mode chosen automatically, as for
+	 * "Own screen") and back to a window. Before, the screen type was set
+	 * to "Ask" for good: every toggle opened the screen mode requester and
+	 * there was no way back to the window. */
+	fullscreen_override = is_fullscreen_state ? UAESCREENTYPE_PUBLIC : UAESCREENTYPE_CUSTOM;
+	reopen_display ();
 }
 
 void screenshot (int type)
@@ -3939,6 +4649,7 @@ void gfx_default_options (struct uae_prefs *p)
 	p->amiga_publicscreen[0] = '\0';
 	p->amiga_use_dither      = 1;
 	p->amiga_use_grey        = 0;
+	p->amiga_middle_release  = 1;
 }
 
 void gfx_save_options (FILE *f, const struct uae_prefs *p)
@@ -3947,12 +4658,14 @@ void gfx_save_options (FILE *f, const struct uae_prefs *p)
 	cfgfile_write (f, GFX_NAME ".publicscreen=%s\n", p->amiga_publicscreen);
 	cfgfile_write (f, GFX_NAME ".use_dither=%s\n",   p->amiga_use_dither ? "true" : "false");
 	cfgfile_write (f, GFX_NAME ".use_grey=%s\n",     p->amiga_use_grey ? "true" : "false");
+	cfgfile_write (f, GFX_NAME ".middle_release=%s\n", p->amiga_middle_release ? "true" : "false");
 }
 
 int gfx_parse_option (struct uae_prefs *p, const char *option, const char *value)
 {
 	return (cfgfile_yesno  (option, value, "use_dither",   &p->amiga_use_dither)
 		|| cfgfile_yesno  (option, value, "use_grey",	 &p->amiga_use_grey)
+		|| cfgfile_yesno  (option, value, "middle_release", &p->amiga_middle_release)
 		|| cfgfile_strval (option, value, "screen_type",  &p->amiga_screen_type, screen_type, 0)
 		|| cfgfile_string (option, value, "publicscreen", &p->amiga_publicscreen[0], 256));
 }

@@ -6,7 +6,7 @@ dnl Modified for JIT compiling implementation for PowerPC by Almos Rajnai
 
 AC_PREREQ(2.55)
 
-m4_define(uae_version_major, 1)
+m4_define(uae_version_major, 2)
 m4_define(uae_version_minor, 0)
 m4_define(uae_version_revision, 0)
 
@@ -599,8 +599,12 @@ else if [[ "$OSDEP" = "od-amiga" ]]; then
 	GFX_DEP=gfx-amigaos
 	GFX_NAME="native AmigaOS"
 
-	GUI_DEP=gui-muirexx
-	GUI_NAME="MUIRexx"
+	GUI_DEP=gui-reaction
+	GUI_NAME="ReAction"
+	if test "x$UAE_GUI_DEP" = "xgui-muirexx"; then
+		GUI_DEP=gui-muirexx
+		GUI_NAME="MUIRexx"
+	fi
 
 	SND_DEP=sd-amigaos
 	SND_NAME="native AmigaOS/AHI"
@@ -1817,6 +1821,7 @@ AC_CONFIG_FILES([Makefile
 		 src/gui-cocoa/Makefile
 		 src/gui-gtk/Makefile
 		 src/gui-muirexx/Makefile
+		 src/gui-reaction/Makefile
 		 src/keymap/Makefile
 		 src/test/Makefile
 ])

@@ -382,7 +382,76 @@ struct Template {
 #define PSSO_BoardInfo_MemoryClock		   PSSO_BoardInfo_MaxChunkSize + 4
 #define PSSO_BoardInfo_PixelClockCount		   PSSO_BoardInfo_MemoryClock + 4
 #define PSSO_BoardInfo_AllocCardMem		   PSSO_BoardInfo_PixelClockCount + MAXMODES*4
-#define PSSO_BoardInfo_SpecialFeatures		   PSSO_BoardInfo_AllocCardMem + 68*4 /* 68 function pointers */
+/* The 68 function slots of the BoardInfo (as in WinUAE picasso96_win.h;
+ * all offsets that both headers share were checked to have the same value). */
+#define PSSO_BoardInfo_FreeCardMem		   PSSO_BoardInfo_AllocCardMem + 4
+#define PSSO_BoardInfo_SetSwitch		   PSSO_BoardInfo_FreeCardMem + 4
+#define PSSO_BoardInfo_SetColorArray		   PSSO_BoardInfo_SetSwitch + 4
+#define PSSO_BoardInfo_SetDAC			   PSSO_BoardInfo_SetColorArray + 4
+#define PSSO_BoardInfo_SetGC			   PSSO_BoardInfo_SetDAC + 4
+#define PSSO_BoardInfo_SetPanning		   PSSO_BoardInfo_SetGC + 4
+#define PSSO_BoardInfo_CalculateBytesPerRow	   PSSO_BoardInfo_SetPanning + 4
+#define PSSO_BoardInfo_CalculateMemory		   PSSO_BoardInfo_CalculateBytesPerRow + 4
+#define PSSO_BoardInfo_GetCompatibleFormats	   PSSO_BoardInfo_CalculateMemory + 4
+#define PSSO_BoardInfo_SetDisplay		   PSSO_BoardInfo_GetCompatibleFormats + 4
+#define PSSO_BoardInfo_ResolvePixelClock	   PSSO_BoardInfo_SetDisplay + 4
+#define PSSO_BoardInfo_GetPixelClock		   PSSO_BoardInfo_ResolvePixelClock + 4
+#define PSSO_BoardInfo_SetClock			   PSSO_BoardInfo_GetPixelClock + 4
+#define PSSO_BoardInfo_SetMemoryMode		   PSSO_BoardInfo_SetClock + 4
+#define PSSO_BoardInfo_SetWriteMask		   PSSO_BoardInfo_SetMemoryMode + 4
+#define PSSO_BoardInfo_SetClearMask		   PSSO_BoardInfo_SetWriteMask + 4
+#define PSSO_BoardInfo_SetReadPlane		   PSSO_BoardInfo_SetClearMask + 4
+#define PSSO_BoardInfo_WaitVerticalSync		   PSSO_BoardInfo_SetReadPlane + 4
+#define PSSO_BoardInfo_SetInterrupt		   PSSO_BoardInfo_WaitVerticalSync + 4
+#define PSSO_BoardInfo_WaitBlitter		   PSSO_BoardInfo_SetInterrupt + 4
+#define PSSO_BoardInfo_ScrollPlanar		   PSSO_BoardInfo_WaitBlitter + 4
+#define PSSO_BoardInfo_ScrollPlanarDefault	   PSSO_BoardInfo_ScrollPlanar + 4
+#define PSSO_BoardInfo_UpdatePlanar		   PSSO_BoardInfo_ScrollPlanarDefault + 4
+#define PSSO_BoardInfo_UpdatePlanarDefault	   PSSO_BoardInfo_UpdatePlanar + 4
+#define PSSO_BoardInfo_BlitPlanar2Chunky	   PSSO_BoardInfo_UpdatePlanarDefault + 4
+#define PSSO_BoardInfo_BlitPlanar2ChunkyDefault	   PSSO_BoardInfo_BlitPlanar2Chunky + 4
+#define PSSO_BoardInfo_FillRect			   PSSO_BoardInfo_BlitPlanar2ChunkyDefault + 4
+#define PSSO_BoardInfo_FillRectDefault		   PSSO_BoardInfo_FillRect + 4
+#define PSSO_BoardInfo_InvertRect		   PSSO_BoardInfo_FillRectDefault + 4
+#define PSSO_BoardInfo_InvertRectDefault	   PSSO_BoardInfo_InvertRect + 4
+#define PSSO_BoardInfo_BlitRect			   PSSO_BoardInfo_InvertRectDefault + 4
+#define PSSO_BoardInfo_BlitRectDefault		   PSSO_BoardInfo_BlitRect + 4
+#define PSSO_BoardInfo_BlitTemplate		   PSSO_BoardInfo_BlitRectDefault + 4
+#define PSSO_BoardInfo_BlitTemplateDefault	   PSSO_BoardInfo_BlitTemplate + 4
+#define PSSO_BoardInfo_BlitPattern		   PSSO_BoardInfo_BlitTemplateDefault + 4
+#define PSSO_BoardInfo_BlitPatternDefault	   PSSO_BoardInfo_BlitPattern + 4
+#define PSSO_BoardInfo_DrawLine			   PSSO_BoardInfo_BlitPatternDefault + 4
+#define PSSO_BoardInfo_DrawLineDefault		   PSSO_BoardInfo_DrawLine + 4
+#define PSSO_BoardInfo_BlitRectNoMaskComplete	   PSSO_BoardInfo_DrawLineDefault + 4
+#define PSSO_BoardInfo_BlitRectNoMaskCompleteDefault PSSO_BoardInfo_BlitRectNoMaskComplete + 4
+#define PSSO_BoardInfo_BlitPlanar2Direct	   PSSO_BoardInfo_BlitRectNoMaskCompleteDefault + 4
+#define PSSO_BoardInfo_BlitPlanar2DirectDefault	   PSSO_BoardInfo_BlitPlanar2Direct + 4
+#define PSSO_BoardInfo_Reserved0		   PSSO_BoardInfo_BlitPlanar2DirectDefault + 4
+#define PSSO_BoardInfo_Reserved0Default		   PSSO_BoardInfo_Reserved0 + 4
+#define PSSO_BoardInfo_Reserved1		   PSSO_BoardInfo_Reserved0Default + 4
+#define PSSO_SetSplitPosition			   PSSO_BoardInfo_Reserved1 + 4
+#define PSSO_ReInitMemory			   PSSO_SetSplitPosition + 4
+#define PSSO_BoardInfo_GetCompatibleDACFormats	   PSSO_ReInitMemory + 4
+#define PSSO_BoardInfo_CoerceMode		   PSSO_BoardInfo_GetCompatibleDACFormats + 4
+#define PSSO_BoardInfo_Reserved3Default		   PSSO_BoardInfo_CoerceMode + 4
+#define PSSO_BoardInfo_BlitRectTransparent	   PSSO_BoardInfo_Reserved3Default + 4
+#define PSSO_BoardInfo_BlitRectTransparentDefault  PSSO_BoardInfo_BlitRectTransparent + 4
+#define PSSO_BoardInfo_GetVSyncState		   PSSO_BoardInfo_BlitRectTransparentDefault + 4
+#define PSSO_BoardInfo_GetVBeamPos		   PSSO_BoardInfo_GetVSyncState + 4
+#define PSSO_BoardInfo_SetDPMSLevel		   PSSO_BoardInfo_GetVBeamPos + 4
+#define PSSO_BoardInfo_ResetChip		   PSSO_BoardInfo_SetDPMSLevel + 4
+#define PSSO_BoardInfo_GetFeatureAttrs		   PSSO_BoardInfo_ResetChip + 4
+#define PSSO_BoardInfo_AllocBitMap		   PSSO_BoardInfo_GetFeatureAttrs + 4
+#define PSSO_BoardInfo_FreeBitMap		   PSSO_BoardInfo_AllocBitMap + 4
+#define PSSO_BoardInfo_GetBitMapAttr		   PSSO_BoardInfo_FreeBitMap + 4
+#define PSSO_BoardInfo_SetSprite		   PSSO_BoardInfo_GetBitMapAttr + 4
+#define PSSO_BoardInfo_SetSpritePosition	   PSSO_BoardInfo_SetSprite + 4
+#define PSSO_BoardInfo_SetSpriteImage		   PSSO_BoardInfo_SetSpritePosition + 4
+#define PSSO_BoardInfo_SetSpriteColor		   PSSO_BoardInfo_SetSpriteImage + 4
+#define PSSO_BoardInfo_CreateFeature		   PSSO_BoardInfo_SetSpriteColor + 4
+#define PSSO_BoardInfo_SetFeatureAttrs		   PSSO_BoardInfo_CreateFeature + 4
+#define PSSO_BoardInfo_DeleteFeature		   PSSO_BoardInfo_SetFeatureAttrs + 4
+#define PSSO_BoardInfo_SpecialFeatures		   PSSO_BoardInfo_DeleteFeature + 4 /* = AllocCardMem + 68*4 */
 #define PSSO_BoardInfo_ModeInfo			   PSSO_BoardInfo_SpecialFeatures + 12 /* SpecialFeatures is 12-bytes */
 #define PSSO_BoardInfo_RGBFormat		   PSSO_BoardInfo_ModeInfo + 4
 #define PSSO_BoardInfo_XOffset			   PSSO_BoardInfo_RGBFormat + 4
@@ -438,6 +507,10 @@ struct BoardInfo {
 #define BIB_HARDWARESPRITE	0	/* board has hardware sprite */
 #define BIB_NOMEMORYMODEMIX	1	/* board does not support modifying planar bitmaps while displaying chunky and vice versa */
 #define BIB_NEEDSALIGNMENT	2	/* bitmaps have to be aligned (not yet supported!) */
+#define BIB_CACHEMODECHANGE	3	/* board memory may be set to Imprecise (060) or Nonserialised (040) */
+#define BIB_VBLANKINTERRUPT	4	/* board can cause a hardware interrupt on a vertical retrace */
+#define BIB_HASSPRITEBUFFER	5	/* board has allocated memory for software sprite image and save buffer */
+#define BIB_VGASCREENSPLIT	6	/* has a screen B with fixed screen position for split-screens */
 #define BIB_DBLSCANDBLSPRITEY	8	/* hardware sprite y position is doubled on doublescan display modes */
 #define BIB_ILACEHALFSPRITEY	9	/* hardware sprite y position is halved on interlace display modes */
 #define BIB_ILACEDBLROWOFFSET	10	/* doubled row offset in interlaced display modes needs additional horizontal bit */
@@ -456,12 +529,20 @@ struct BoardInfo {
 #define BIB_NOMASKBLITS		22	/* perform blits without taking care of mask */
 #define BIB_NOC2PBLITS		23	/* use CPU for planar to chunky conversions */
 #define BIB_NOBLITTER		24	/* disable all blitter functions */
+#define BIB_SYSTEM2SCREENBLITS	25	/* allow data to be written to screen memory for cpu as blitter source */
+#define BIB_GRANTDIRECTACCESS	26	/* all data on the board can be accessed at any time without bi->SetMemoryMode() */
+#define BIB_PALETTESWITCH	27
+#define BIB_DACSWITCH		28
 
 #define BIB_IGNOREMASK	BIB_NOMASKBLITS
 
 #define BIF_HARDWARESPRITE	(1<<BIB_HARDWARESPRITE)
 #define BIF_NOMEMORYMODEMIX	(1<<BIB_NOMEMORYMODEMIX)
 #define BIF_NEEDSALIGNMENT	(1<<BIB_NEEDSALIGNMENT)
+#define BIF_CACHEMODECHANGE	(1<<BIB_CACHEMODECHANGE)
+#define BIF_VBLANKINTERRUPT	(1<<BIB_VBLANKINTERRUPT)
+#define BIF_HASSPRITEBUFFER	(1<<BIB_HASSPRITEBUFFER)
+#define BIF_VGASCREENSPLIT	(1<<BIB_VGASCREENSPLIT)
 #define BIF_DBLSCANDBLSPRITEY	(1<<BIB_DBLSCANDBLSPRITEY)
 #define BIF_ILACEHALFSPRITEY	(1<<BIB_ILACEHALFSPRITEY)
 #define BIF_ILACEDBLROWOFFSET	(1<<BIB_ILACEDBLROWOFFSET)
@@ -478,6 +559,31 @@ struct BoardInfo {
 #define BIF_NOMASKBLITS		(1<<BIB_NOMASKBLITS)
 #define BIF_NOC2PBLITS		(1<<BIB_NOC2PBLITS)
 #define BIF_NOBLITTER		(1<<BIB_NOBLITTER)
+#define BIF_SYSTEM2SCREENBLITS	(1<<BIB_SYSTEM2SCREENBLITS)
+#define BIF_GRANTDIRECTACCESS	(1<<BIB_GRANTDIRECTACCESS)
+#define BIF_PALETTESWITCH	(1<<BIB_PALETTESWITCH)
+#define BIF_DACSWITCH		(1<<BIB_DACSWITCH)
+
+/* Built-in uaegfx.card: library base layout (as in WinUAE). After the
+ * library node the fields used by the card code and the VBLANK interrupt
+ * server (struct Interrupt = 22 bytes, server code 11 words). */
+#define CARD_LIB_SIZE		34
+#define CARD_FLAGS		CARD_LIB_SIZE
+#define CARD_EXECBASE		(CARD_FLAGS + 2)
+#define CARD_EXPANSIONBASE	(CARD_EXECBASE + 4)
+#define CARD_SEGMENTLIST	(CARD_EXPANSIONBASE + 4)
+#define CARD_NAME		(CARD_SEGMENTLIST + 4)
+#define CARD_RESLIST		(CARD_NAME + 4)
+#define CARD_RESLISTSIZE	(CARD_RESLIST + 4)
+#define CARD_BOARDINFO		(CARD_RESLISTSIZE + 4)
+#define CARD_VBLANKIRQ		(CARD_BOARDINFO + 4)
+#define CARD_PORTSIRQ		(CARD_VBLANKIRQ + 22)
+#define CARD_IRQFLAG		(CARD_PORTSIRQ + 22)
+#define CARD_IRQPTR		(CARD_IRQFLAG + 4)
+#define CARD_IRQEXECBASE	(CARD_IRQPTR + 4)
+#define CARD_IRQCODE		(CARD_IRQEXECBASE + 4)
+#define CARD_END		(CARD_IRQCODE + 2 * 11 * 2)
+#define CARD_SIZEOF		CARD_END
 
 #define BIF_IGNOREMASK	BIF_NOMASKBLITS
 
@@ -502,6 +608,25 @@ struct picasso96_state_struct
     uae_u8		CardFound;
 };
 
+/* Hardware sprite (mouse pointer) of the uaegfx card. The image is kept as
+ * 2-bit pens (0 = transparent, 1-3 = colours); the host side
+ * (gfx-amigaos/ami-win.c) mixes it into the output picture. */
+#define P96_SPRITE_MAXWIDTH  64
+#define P96_SPRITE_MAXHEIGHT 64
+
+struct picasso96_sprite {
+    int     enabled;            /* BIF_HARDWARESPRITE was offered (gfxcard_hardware_sprite) */
+    int     visible;            /* SetSprite(TRUE) */
+    int     valid;              /* image loaded */
+    int     x, y;               /* top left corner, relative to the visible screen */
+    int     width, height;
+    int     xoffset, yoffset;   /* hot spot */
+    uae_u32 colors[4];          /* 0x00RRGGBB; [0] unused (transparent) */
+    uae_u32 serial;             /* incremented on every change of image or colours */
+    uae_u8  pixels[P96_SPRITE_MAXWIDTH * P96_SPRITE_MAXHEIGHT];
+};
+extern struct picasso96_sprite picasso96_sprite;
+
 extern void InitPicasso96 (void);
 
 struct regstruct;
@@ -524,6 +649,18 @@ extern uae_u32 picasso_BlitPlanar2Direct      (struct regstruct *regs) REGPARAM;
 extern uae_u32 picasso_BlitTemplate           (struct regstruct *regs) REGPARAM;
 extern uae_u32 picasso_BlitPattern            (struct regstruct *regs) REGPARAM;
 extern uae_u32 picasso_BlitRectNoMaskComplete (struct regstruct *regs) REGPARAM;
+extern uae_u32 picasso_BlitRectTransparent    (struct regstruct *regs) REGPARAM;
+extern uae_u32 picasso_SetSprite              (struct regstruct *regs) REGPARAM;
+extern uae_u32 picasso_SetSpritePosition      (struct regstruct *regs) REGPARAM;
+extern uae_u32 picasso_SetSpriteImage         (struct regstruct *regs) REGPARAM;
+extern uae_u32 picasso_SetSpriteColor         (struct regstruct *regs) REGPARAM;
+
+/* Built-in uaegfx.card (picasso96.c) */
+extern void    uaegfx_install_code (void);               /* rtarea_init() */
+extern uaecptr uaegfx_add_resident (uaecptr resaddr);    /* filesys_diagentry() */
+extern int     uaegfx_builtin_active (void);
+extern void    picasso_trigger_vblank (void);            /* vsync_handler() */
+extern int     gfx_rtg_sprite_supported (void);          /* host: can mix in the pointer */
 
 extern uae_u32 gfxmem_mask;
 extern uae_u8 *gfxmemory;

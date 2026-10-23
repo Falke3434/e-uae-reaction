@@ -21,6 +21,9 @@
 
 static FILE *logfile;
 
+/* v16: log target chosen in the GUI settings (-1 = currprefs.console_output) */
+int write_log_output = -1;
+
 struct uae_prefs currprefs __attribute__((used)), changed_prefs __attribute__((used));
 
 
@@ -87,7 +90,7 @@ void write_log (const char *fmt, ...)
 
 #ifdef HAVE_VFPRINTF
 
-	switch (currprefs.console_output)		// CONSOLE
+	switch (write_log_output >= 0 ? write_log_output : currprefs.console_output)		// CONSOLE
 	{
 		case OUTPUT_CONSOLE:
 			vfprintf (logfile ? logfile : stderr, fmt, ap);

@@ -130,12 +130,16 @@ int init_sound (void)
     /* check freq */
     if (!currprefs.sound_freq)
 	currprefs.sound_freq = 22000;
-    if (clockval / currprefs.sound_freq < 80/*124*/ || clockval/currprefs.sound_freq > 65535) {
-	write_log ("Can't use sound with desired frequency %d Hz\n", currprefs.sound_freq);
-	changed_prefs.sound_freq = currprefs.sound_freq = 22000;
+    /* v17: the old check (clockval / freq between 80 and 65535) came
+     * from Paula's period and refused 48000 Hz (period 73), which then
+     * silently became 22000 Hz. The host output can use any rate AHI
+     * accepts; only nonsense values are refused. */
+    if (currprefs.sound_freq < 8000 || currprefs.sound_freq > 96000) {
+	write_log ("Can't use sound with desired frequency %d Hz, using 44100 Hz\n", currprefs.sound_freq);
+	changed_prefs.sound_freq = currprefs.sound_freq = 44100;
     }
     rate   = currprefs.sound_freq;
-    period = (uae_u16)(clockval / rate);
+    period = clockval / rate;                    /* unused, kept for reference */
 
     if (!open_AHI ())
 	goto fail;

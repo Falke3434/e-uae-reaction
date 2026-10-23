@@ -1,0 +1,65 @@
+# Makefile.in fuer src/gui-reaction  (von install.sh erzeugt, handgeschrieben,
+# ohne automake-Abhaengigkeitsverfolgung)
+#
+# Baut libguidep.a - die ReAction-GUI fuer E-UAE auf AmigaOS 4.1 (PPC).
+
+@SET_MAKE@
+SHELL = @SHELL@
+
+srcdir       = @srcdir@
+top_srcdir   = @top_srcdir@
+top_builddir = @top_builddir@
+VPATH        = @srcdir@
+subdir       = src/gui-reaction
+
+CC           = @CC@
+AR           = @AR@
+ARFLAGS      = cru
+RANLIB       = @RANLIB@
+DEFS         = @DEFS@
+CPPFLAGS     = @CPPFLAGS@
+CFLAGS       = @CFLAGS@
+OBJEXT       = @OBJEXT@
+UAE_CPPFLAGS = @UAE_CPPFLAGS@
+UAE_CFLAGS   = @UAE_CFLAGS@
+
+INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/src -I$(top_srcdir)/src/include -I$(top_srcdir)/src
+
+COMPILE = $(CC) $(DEFS) $(INCLUDES) $(UAE_CPPFLAGS) $(CPPFLAGS) $(UAE_CFLAGS) $(CFLAGS)
+
+GUI_SOURCES = gui_core.c gui_util.c gui_settings.c gui_pages.c page_media.c page_hardware.c page_display.c page_sound.c page_harddisk.c page_input.c page_shortcuts.c page_config.c locale_support.c locale_defs.c
+GUI_HEADERS = reaction_gui.h locale_ids.h
+GUI_OBJECTS = $(GUI_SOURCES:.c=.$(OBJEXT))
+
+DISTFILES = $(GUI_SOURCES) $(GUI_HEADERS) Makefile.am Makefile.in
+
+.SUFFIXES:
+.SUFFIXES: .c .$(OBJEXT)
+
+.c.$(OBJEXT):
+	$(COMPILE) -c -o $@ $<
+
+all: libguidep.a
+
+libguidep.a: $(GUI_OBJECTS)
+	-rm -f libguidep.a
+	$(AR) $(ARFLAGS) libguidep.a $(GUI_OBJECTS)
+	$(RANLIB) libguidep.a
+
+$(GUI_OBJECTS): $(GUI_HEADERS)
+
+mostlyclean clean:
+	-rm -f *.$(OBJEXT) libguidep.a
+
+distclean maintainer-clean: clean
+	-rm -f Makefile
+
+distdir:
+	@for f in $(DISTFILES); do \
+	  cp -p $(srcdir)/$$f $(distdir)/$$f || exit 1; \
+	done
+
+# Alle uebrigen Standardziele (install, check, tags, ...) sind hier ohne Wirkung.
+.PHONY: all clean mostlyclean distclean maintainer-clean distdir
+.DEFAULT:
+	@:

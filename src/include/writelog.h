@@ -28,5 +28,6 @@ extern void write_log   (const char *, ...) PRINTF_FORMAT;
 #endif
 extern void flush_log   (void);
 extern void set_logfile (const char *logfile_name);
+extern int write_log_output;   /* v16: >= 0 overrides console_output */
 
 #endif /* WRITELOG_H */

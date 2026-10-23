@@ -315,9 +315,79 @@ static struct zfile *bunzip (const char *decompress, struct zfile *z)
     return z;
 }
 
+/*
+ * v17: LHA / LZH and LZX archives (decoders from WinUAE, archive_lha.c,
+ * archive_lzx.c). Same choice as for zip archives: the file named after
+ * the archive path ("game.lha/disk2.adf" or "#2"), otherwise the first
+ * file of a known type (disk image, ROM, ...) after unpacking it.
+ */
+static struct zfile *zuncompress (struct zfile *z);
+
+static int archive_name_match (const char *want, const char *name)
+{
+    const char *p = name + strlen (name);
+    if (!strcasecmp (want, name))
+	return 1;
+    /* also without directories inside the archive */
+    while (p > name && p[-1] != '/' && p[-1] != '\\')
+	p--;
+    return !strcasecmp (want, p);
+}
+
+static struct zfile *archive_pick (struct zfile *z, struct zfile *(*get) (struct zfile *, int), const char *kind)
+{
+    int i;
+
+    for (i = 0; i < 1000; i++) {
+	struct zfile *zf = get (z, i);
+	int take;
+
+	if (!zf) {
+	    /* no file of a known type: the first file (an archive is of no
+	     * use to the caller) */
+	    if (i > 0 && !(z->zipname && z->zipname[0]) && (zf = get (z, 0))) {
+		zf = zuncompress (zf);
+		write_log ("%s: '%s' from '%s'\n", kind, zf->name, z->name);
+		zfile_fclose (z);
+		return zf;
+	    }
+	    break;
+	}
+	if (z->zipname && z->zipname[0])
+	    take = z->zipname[0] == '#' ? atol (z->zipname + 1) == i + 1
+					: archive_name_match (z->zipname, zf->name);
+	else
+	    take = -1;
+	if (take) {
+	    zf = zuncompress (zf);
+	    if (take > 0 || zfile_gettype (zf)) {
+		write_log ("%s: '%s' from '%s'\n", kind, zf->name, z->name);
+		zfile_fclose (z);
+		return zf;
+	    }
+	}
+	zfile_fclose (zf);
+    }
+    write_log ("%s: no usable file in '%s'\n", kind, z->name);
+    return z;
+}
+
 static struct zfile *lha (struct zfile *z)
 {
-    return z;
+    return archive_pick (z, archive_lha_get, "LHA");
+}
+
+static struct zfile *lzx (struct zfile *z)
+{
+    return archive_pick (z, archive_lzx_get, "LZX");
+}
+
+int zfile_getc (struct zfile *z)
+{
+    uae_u8 b;
+    if (zfile_fread (&b, 1, 1, z) != 1)
+	return EOF;
+    return b;
 }
 
 static struct zfile *dms (struct zfile *z)
@@ -478,6 +548,8 @@ static struct zfile *zuncompress (struct zfile *z)
 	if (strcasecmp (ext, "lha") == 0
 	    || strcasecmp (ext, "lzh") == 0)
 	    return lha (z);
+	if (strcasecmp (ext, "lzx") == 0)
+	    return lzx (z);
 	memset (header, 0, sizeof (header));
 	zfile_fseek (z, 0, SEEK_SET);
 	zfile_fread (header, sizeof (header), 1, z);
@@ -488,6 +560,8 @@ static struct zfile *zuncompress (struct zfile *z)
 	    return unzip (z);
 	if (header[0] == 'D' && header[1] == 'M' && header[2] == 'S' && header[3] == '!')
 	    return dms (z);
+	if (header[0] == 'L' && header[1] == 'Z' && header[2] == 'X')
+	    return lzx (z);
     }
     return z;
 }
@@ -504,7 +578,8 @@ static FILE *openzip (char *name, char *zippath)
 	if ((name[i] == '/' || name[i] == '\\') && i > 4) {
 	    v = name[i];
 	    name[i] = 0;
-	    if (!strcasecmp (name + i - 4, ".zip")) {
+	    if (!strcasecmp (name + i - 4, ".zip") || !strcasecmp (name + i - 4, ".lha")
+		|| !strcasecmp (name + i - 4, ".lzh") || !strcasecmp (name + i - 4, ".lzx")) {
 		FILE *f = fopen (name, "rb");
 		if (f) {
 		    if (zippath)

@@ -36,6 +36,12 @@
 /* Define to 1 if you have the <devices/ahi.h> header file. */
 #undef HAVE_DEVICES_AHI_H
 
+/* Define to 1 if you have the <libraries/mpega.h> header file. */
+#undef HAVE_LIBRARIES_MPEGA_H
+
+/* Define to 1 if you have the <proto/mpega.h> header file. */
+#undef HAVE_PROTO_MPEGA_H
+
 /* Define to 1 if you have the <dirent.h> header file, and it defines `DIR'.
    */
 #undef HAVE_DIRENT_H
@@ -488,13 +494,14 @@
 
 /* Define WORDS_BIGENDIAN to 1 if your processor stores words with the most
    significant byte first (like Motorola and SPARC, unlike Intel). */
-#if defined AC_APPLE_UNIVERSAL_BUILD
-# if defined __BIG_ENDIAN__
-#  define WORDS_BIGENDIAN 1
-# endif
-#else
+/* AmigaOS/PPC-Cross-Build: configure legt WORDS_BIGENDIAN nur in config.h ab,
+   das niemand einbindet; die eingerueckte "#  undef"-Zeile oben wird von
+   config.status nicht ersetzt. Ergebnis: Little-Endian-Zweige in ami-win.c,
+   drawing.h (CONVERT_RGB), filesys.c ... -> falsche Farben. Daher direkt vom
+   Compiler ableiten. */
+#if defined __BIG_ENDIAN__ || (defined __BYTE_ORDER__ && defined __ORDER_BIG_ENDIAN__ && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
 # ifndef WORDS_BIGENDIAN
-#  undef WORDS_BIGENDIAN
+#  define WORDS_BIGENDIAN 1
 # endif
 #endif
 

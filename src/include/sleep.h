@@ -49,7 +49,9 @@
 # else
 #  if defined TARGET_AMIGAOS
 #   if defined __amigaos4__
-#	define uae_msleep(msecs) 	MicroDelay(msecs*1000)
+/* MicroDelay() ist unter OS4 ein Busy-Wait (100% CPU, auch im GUI-Leerlauf).
+    TimeDelay() legt den Task wirklich schlafen. */
+#	define uae_msleep(msecs) 	TimeDelay (0, (msecs) / 1000, ((msecs) % 1000) * 1000)
 #   elif defined __MORPHOS__ 
 #    define uae_msleep(msecs) TimeDelay (0, msecs / ONE_THOUSAND, (msecs % ONE_THOUSAND) * ONE_THOUSAND)
 #   else

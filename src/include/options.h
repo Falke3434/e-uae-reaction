@@ -36,6 +36,13 @@ struct uae_input_device {
 };
 
 #define MAX_SPARE_DRIVES 20
+#define MAX_CD_DRIVES 1      /* v16: one CD-ROM image drive (cdimage0=) */
+#define CD_CTRL_UAESCSI 0    /* uaescsi.device unit 0 */
+#define CD_CTRL_IDE0    1    /* ATAPI, IDE master (Gayle / A4000) */
+#define CD_CTRL_IDE1    2    /* ATAPI, IDE slave */
+/* v17: with the CD32 Akiko CD controller (cd32cd=true) the drive is always
+ * attached to Akiko, whatever cd_controller says */
+#define CD_ON_AKIKO(p)  ((p)->cs_cd32cd)
 
 #define CONFIG_TYPE_HARDWARE 1
 #define CONFIG_TYPE_HOST 2
@@ -106,6 +113,11 @@ struct uae_prefs {
     uae_u32 maprom;
 
     char df[4][256];
+    int  cddrive[MAX_CD_DRIVES];          /* v16: CD-ROM drive present (cdimageN=)   */
+    char cdimage[MAX_CD_DRIVES][256];     /* v16: image in the drive, "" = empty     */
+    int  cd_controller;                   /* v16: CD_CTRL_* (cdimage0_controller=)   */
+    int  cd_boot;                         /* v16: mount as bootable CD0: (cdimage0_boot=) */
+    int  cd_bootpri;                      /* v16: its boot priority (cdimage0_bootpri=)   */
     char dfxlist[MAX_SPARE_DRIVES][256];
     char romfile[256];
     char romextfile[256];
@@ -126,9 +138,23 @@ struct uae_prefs {
     uae_u32 bogomem_size;
     uae_u32 a3000mem_size;
     uae_u32 gfxmem_size;
+    int rtg_hardwaresprite;     /* uaegfx: hardware mouse pointer (gfxcard_hardware_sprite) */
+    int rtg_hardwareinterrupt;  /* uaegfx: VBLANK interrupt (gfxcard_hardware_vblank) */
 
     int kickshifter;
     int filesys_no_uaefsdb;
+
+    /* Gayle / A4000 IDE controller (gayle.c) */
+    int cs_ide;			/* 0 = off, 1 = A600/A1200 Gayle, 2 = A4000 */
+    char ide_hardfile[2][256];	/* host file of IDE master / slave, empty = no drive */
+    int ide_readonly[2];
+
+    /* v17: CD32 Akiko chip (akiko.c) - names as in WinUAE */
+    int cs_cd32cd;		/* CD controller (cd32cd=)          */
+    int cs_cd32c2p;		/* chunky-to-planar (cd32c2p=)      */
+    int cs_cd32nvram;		/* 1 KB I2C NVRAM (cd32nvram=)      */
+    int cs_cd32nvram_size;	/* bytes (cd32nvram_size= in KB)    */
+    int cd_speed;		/* CD32 drive: 100 = real speed, 0 = max (cd_speed=) */
 
     struct uaedev_mount_info *mountinfo;
 
@@ -254,6 +280,7 @@ struct uae_prefs {
     int  amiga_screen_type;
     char amiga_publicscreen[256];
     int  amiga_use_grey;
+    int  amiga_middle_release;   /* v17: middle button frees the pointer (window mode) */
     int  amiga_use_dither;
     int  amiga_use_overlay;
 #endif

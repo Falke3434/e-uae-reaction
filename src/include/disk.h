@@ -24,7 +24,7 @@ extern void DISK_hsync (unsigned int hpos);
 extern void DISK_reset (void);
 extern int disk_getwriteprotect (const char *name);
 extern int disk_setwriteprotect (int num, const char *name, int protect);
-extern void disk_creatediskfile (char *name, int type, drive_type adftype, const char *disk_name);
+extern int disk_creatediskfile (char *name, int type, drive_type adftype, const char *disk_name);
 extern void dumpdisk (void);
 extern int DISK_history_add (const char *name, int idx);
 extern char *DISK_history_get (int idx);

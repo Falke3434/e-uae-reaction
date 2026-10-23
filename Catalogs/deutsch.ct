@@ -1,0 +1,2023 @@
+; Deutsche Uebersetzung (E-UAE ReAction GUI). Zeichensatz: ISO-8859-1 (Latin-1).
+; Platzhalter (%s, %d) und \n muessen unveraendert bleiben.
+;
+## version $VER: E-UAE.catalog 1.3 (21.10.2026)
+## codeset 0
+## language deutsch
+;
+MSG_START
+Start
+; Start
+;
+MSG_PAUSE
+Pause
+; Pause
+;
+MSG_RESUME
+Fortsetzen
+; Resume
+;
+MSG_RESET
+Reset
+; Reset
+;
+MSG_STOP
+Stop
+; Stop
+;
+MSG_QUIT
+Beenden
+; Quit
+;
+MSG_RUNNING
+L\xE4uft
+; Running
+;
+MSG_PAUSED
+Pausiert
+; Paused
+;
+MSG_STOPPED
+Gestoppt
+; Stopped
+;
+MSG_STARTING
+Startet...
+; Starting...
+;
+MSG_SELECT_IMAGE_FOR_DF_D
+Image f\xFCr DF%d w\xE4hlen
+; Select image for DF%d
+;
+MSG_SAVE_SAVESTATE
+Savestate speichern
+; Save savestate
+;
+MSG_LOAD_SAVESTATE
+Savestate laden
+; Load savestate
+;
+MSG_E_UAE_ERROR
+E-UAE Fehler
+; E-UAE Error
+;
+MSG_MEDIA
+Medien
+; Media
+;
+MSG_HARDWARE
+Hardware
+; Hardware
+;
+MSG_HARD_DISKS
+Festplatten
+; Hard disks
+;
+MSG_DISPLAY
+Display
+; Display
+;
+MSG_SOUND
+Sound
+; Sound
+;
+MSG_INPUT
+Eingabe
+; Input
+;
+MSG_CONFIGURATION
+Konfiguration
+; Configuration
+;
+MSG_DESCRIPTION
+Beschreibung:
+; Description:
+;
+MSG_LOAD
+Laden...
+; Load...
+;
+MSG_SAVE
+Speichern
+; Save
+;
+MSG_SAVE_AS
+Speichern unter...
+; Save as...
+;
+MSG_SAVESTATES
+Savestates
+; Savestates
+;
+MSG_LOAD_SAVESTATE_2
+Savestate laden...
+; Load savestate...
+;
+MSG_SAVE_SAVESTATE_2
+Savestate speichern...
+; Save savestate...
+;
+MSG_GENERAL
+Allgemein
+; General
+;
+MSG_OPEN_GUI_AT_PROGRAM_START
+GUI beim Programmstart \xF6ffnen
+; Open GUI at program start
+;
+MSG_EMULATE_BSDSOCKET_LIBRARY_NETWORK
+bsdsocket.library emulieren (Netzwerk)
+; Emulate bsdsocket.library (network)
+;
+MSG_SYNCHRONIZE_AMIGA_CLOCK_WITH_SYSTEM_TIME
+Amiga-Uhr mit Systemzeit synchronisieren
+; Synchronize Amiga clock with system time
+;
+MSG_LOAD_CONFIGURATION
+Konfiguration laden
+; Load configuration
+;
+MSG_SAVE_CONFIGURATION
+Konfiguration speichern
+; Save configuration
+;
+MSG_COULD_NOT_WRITE_CONFIGURATION_TO_S
+Konfiguration konnte nicht nach '%s' geschrieben werden.
+; Could not write configuration to '%s'.
+;
+MSG_OWN_SCREEN
+Eigener Screen
+; Own screen
+;
+MSG_PUBLIC_SCREEN
+Public Screen
+; Public screen
+;
+MSG_ASK_AT_STARTUP
+Beim Start fragen
+; Ask at startup
+;
+MSG_DOUBLE_LINES
+Zeilen verdoppeln
+; Double lines
+;
+MSG_SCANLINES
+Scanlines
+; Scanlines
+;
+MSG_NO
+Nein
+; No
+;
+MSG_SIMPLE
+Einfach
+; Simple
+;
+MSG_SMART
+Intelligent
+; Smart
+;
+MSG_SCREEN
+Screen
+; Screen
+;
+MSG_SCREEN_TYPE
+Screen-Art:
+; Screen type:
+;
+MSG_PUBLIC_SCREEN_2
+Public Screen:
+; Public screen:
+;
+MSG_FULLSCREEN_AMIGA_MODES
+Vollbild (Amiga-Modi)
+; Fullscreen (Amiga modes)
+;
+MSG_FULLSCREEN_PICASSO96_MODES
+Vollbild (Picasso96-Modi)
+; Fullscreen (Picasso96 modes)
+;
+MSG_RESOLUTION
+Aufl\xF6sung
+; Resolution
+;
+MSG_WINDOW_WIDTH
+Fenster Breite:
+; Window width:
+;
+MSG_WINDOW_HEIGHT
+Fenster H\xF6he:
+; Window height:
+;
+MSG_FULLSCREEN_WIDTH
+Vollbild Breite:
+; Fullscreen width:
+;
+MSG_FULLSCREEN_HEIGHT
+Vollbild H\xF6he:
+; Fullscreen height:
+;
+MSG_APPEARANCE
+Darstellung
+; Appearance
+;
+MSG_LINE_MODE
+Zeilenmodus:
+; Line mode:
+;
+MSG_CENTER_HORIZONTALLY
+Horiz. zentrieren:
+; Center horizontally:
+;
+MSG_CENTER_VERTICALLY
+Vert. zentrieren:
+; Center vertically:
+;
+MSG_COLOR_MODE
+Farbmodus:
+; Color mode:
+;
+MSG_EVERY_NTH_FRAME
+Jedes n-te Bild:
+; Every nth frame:
+;
+MSG_REFRESH_RATE_0_AUTO
+Bildwiederholrate (0=auto):
+; Refresh rate (0=auto):
+;
+MSG_OPTIONS
+Optionen
+; Options
+;
+MSG_LORES_HALF_RESOLUTION
+Lores (halbe Aufl\xF6sung)
+; Lores (half resolution)
+;
+MSG_CORRECT_ASPECT_RATIO
+Seitenverh\xE4ltnis korrigieren
+; Correct aspect ratio
+;
+MSG_SYNC_WITH_SCREEN
+Mit Bildschirm synchronisieren
+; Sync with screen
+;
+MSG_DITHERING_FEW_COLORS
+Dithering (wenige Farben)
+; Dithering (few colors)
+;
+MSG_GRAYSCALE
+Graustufen
+; Grayscale
+;
+MSG_SHOW_LEDS_IN_PICTURE
+LEDs im Bild anzeigen
+; Show LEDs in picture
+;
+MSG_PLEASE_ENTER_A_PATH_FIRST
+Bitte zuerst einen Pfad angeben.
+; Please enter a path first.
+;
+MSG_PLEASE_ENTER_A_VOLUME_NAME_FOR_THE_DRIVE
+Bitte einen Volume-Namen f\xFCr das Laufwerk angeben.
+; Please enter a volume name for the drive.
+;
+MSG_COULD_NOT_ADD_UNIT_N_S
+Einheit konnte nicht hinzugef\xFCgt werden:\n%s
+; Could not add unit:\n%s
+;
+MSG_COULD_NOT_CHANGE_UNIT_N_S
+Einheit konnte nicht ge\xE4ndert werden:\n%s
+; Could not change unit:\n%s
+;
+MSG_SELECT_HARDFILE
+Hardfile w\xE4hlen
+; Select hardfile
+;
+MSG_SELECT_DIRECTORY_OR_HARDFILE
+Verzeichnis oder Hardfile w\xE4hlen
+; Select directory or hardfile
+;
+MSG_UNITS
+Einheiten
+; Units
+;
+MSG_UNIT
+Einheit
+; Unit
+;
+MSG_DEVICE_E_G_DH0
+Ger\xE4t (z.B. DH0):
+; Device (e.g. DH0):
+;
+MSG_VOLUME_NAME
+Volume-Name:
+; Volume name:
+;
+MSG_PATH
+Pfad:
+; Path:
+;
+MSG_READ_ONLY
+Nur lesen
+; Read only
+;
+MSG_SECTORS
+Sektoren:
+; Sectors:
+;
+MSG_HEADS
+K\xF6pfe:
+; Heads:
+;
+MSG_RESERVED
+Reserviert:
+; Reserved:
+;
+MSG_BLOCK_SIZE
+Blockgr\xF6\xDFe:
+; Block size:
+;
+MSG_BOOT_PRIORITY
+Boot-Priorit\xE4t:
+; Boot priority:
+;
+MSG_ADD_DIRECTORY
+Verzeichnis hinzuf\xFCgen
+; Add directory
+;
+MSG_ADD_HARDFILE
+Hardfile hinzuf\xFCgen
+; Add hardfile
+;
+MSG_CHANGE
+\xC4ndern
+; Change
+;
+MSG_REMOVE
+Entfernen
+; Remove
+;
+MSG_MAXIMUM
+Maximal
+; Maximum
+;
+MSG_ORIGINAL_AMIGA_SPEED
+Original (Amiga-Takt)
+; Original (Amiga speed)
+;
+MSG_ECS_COMPLETE
+ECS komplett
+; ECS complete
+;
+MSG_NONE
+Keine
+; None
+;
+MSG_SPRITES_ONLY
+Nur Sprites
+; Sprites only
+;
+MSG_SPRITES_PLAYFIELDS
+Sprites + Playfields
+; Sprites + playfields
+;
+MSG_FULL
+Vollst\xE4ndig
+; Full
+;
+MSG_NO_RAM
+Keiner
+; No RAM
+;
+MSG_1_8_MB
+1,8 MB
+; 1.8 MB
+;
+MSG_OFF
+Aus
+; Off
+;
+MSG_CUSTOM_SETTINGS
+Eigene Einstellung
+; Custom settings
+;
+MSG_A1200_TURBO_CARD
+A1200 + Turbokarte
+; A1200 + turbo card
+;
+MSG_AMIGA_MODEL
+Amiga-Modell
+; Amiga model
+;
+MSG_PRESET
+Vorgabe:
+; Preset:
+;
+MSG_TYPE
+Typ:
+; Type:
+;
+MSG_SPEED
+Takt:
+; Speed:
+;
+MSG_COMPATIBLE_CPU_MODE
+Kompatibler CPU-Modus
+; Compatible CPU mode
+;
+MSG_CYCLE_EXACT_CPU
+Zyklengenaue CPU
+; Cycle-exact CPU
+;
+MSG_CHIPSET
+Chipsatz
+; Chipset
+;
+MSG_CHIPSET_2
+Chipsatz:
+; Chipset:
+;
+MSG_COLLISION
+Kollision:
+; Collision:
+;
+MSG_RUN_BLITTER_IMMEDIATELY
+Blitter sofort ausf\xFChren
+; Run blitter immediately
+;
+MSG_CYCLE_EXACT_BLITTER
+Zyklengenauer Blitter
+; Cycle-exact blitter
+;
+MSG_MEMORY
+Speicher
+; Memory
+;
+MSG_GRAPHICS_CARD_P96
+Grafikkarte (P96):
+; Graphics card (P96):
+;
+MSG_HARD_CACHE_FLUSH
+Harter Cache-Flush
+; Hard cache flush
+;
+MSG_CONSTANT_JUMPS
+Konstante Spr\xFCnge
+; Constant jumps
+;
+MSG_KEYBOARD_NUMERIC_KEYPAD
+Tastatur: Ziffernblock
+; Keyboard: numeric keypad
+;
+MSG_KEYBOARD_CURSOR_SPACE
+Tastatur: Cursor + Leertaste
+; Keyboard: cursor + space
+;
+MSG_KEYBOARD_T_F_H_B_ALT
+Tastatur: T/F/H/B + Alt
+; Keyboard: T/F/H/B + Alt
+;
+MSG_KEYBOARD_X_ARCADE_1
+Tastatur: X-Arcade 1
+; Keyboard: X-Arcade 1
+;
+MSG_KEYBOARD_X_ARCADE_2
+Tastatur: X-Arcade 2
+; Keyboard: X-Arcade 2
+;
+MSG_MOUSE
+Maus
+; Mouse
+;
+MSG_MOUSE_2
+Maus 2
+; Mouse 2
+;
+MSG_NOT_ASSIGNED
+Nicht belegt
+; Not assigned
+;
+MSG_DANISH
+D\xE4nisch
+; Danish
+;
+MSG_GERMAN
+Deutsch
+; German
+;
+MSG_SWEDISH
+Schwedisch
+; Swedish
+;
+MSG_FRENCH
+Franz\xF6sisch
+; French
+;
+MSG_ITALIAN
+Italienisch
+; Italian
+;
+MSG_SPANISH
+Spanisch
+; Spanish
+;
+MSG_CONTROLLER_PORTS
+Controller-Ports
+; Controller ports
+;
+MSG_PORT_0_MOUSE
+Port 0 (Maus):
+; Port 0 (mouse):
+;
+MSG_PORT_1_JOYSTICK
+Port 1 (Joystick):
+; Port 1 (joystick):
+;
+MSG_KEYBOARD_AND_MOUSE
+Tastatur und Maus
+; Keyboard and mouse
+;
+MSG_KEYBOARD_LAYOUT
+Tastaturlayout:
+; Keyboard layout:
+;
+MSG_MOUSE_SPEED
+Mausgeschwindigkeit (%):
+; Mouse speed (%):
+;
+MSG_HIDE_MOUSE_POINTER_IN_EMULATOR_WINDOW
+Mauszeiger im Emulatorfenster verbergen
+; Hide mouse pointer in emulator window
+;
+MSG_FLOPPY_DRIVES
+Diskettenlaufwerke
+; Floppy drives
+;
+MSG_EJECT
+Auswerfen
+; Eject
+;
+MSG_FLOPPY_SPEED
+Floppy-Geschwindigkeit:
+; Floppy speed:
+;
+MSG_SELECT_KICKSTART_ROM
+Kickstart-ROM w\xE4hlen
+; Select Kickstart ROM
+;
+MSG_SELECT_EXTENDED_ROM
+Extended-ROM w\xE4hlen
+; Select extended ROM
+;
+MSG_SELECT_ROM_KEYFILE
+ROM-Keyfile w\xE4hlen
+; Select ROM keyfile
+;
+MSG_SELECT_DISK_IMAGE
+Diskimage w\xE4hlen
+; Select disk image
+;
+MSG_EMULATED_NO_OUTPUT
+Emuliert (ohne Ausgabe)
+; Emulated (no output)
+;
+MSG_EXACT
+Exakt
+; Exact
+;
+MSG_OUTPUT
+Ausgabe
+; Output
+;
+MSG_MODE
+Modus:
+; Mode:
+;
+MSG_CHANNELS
+Kan\xE4le:
+; Channels:
+;
+MSG_FREQUENCY
+Frequenz:
+; Frequency:
+;
+MSG_ATTENUATION_0_LOUD
+D\xE4mpfung % (0=laut):
+; Attenuation % (0=loud):
+;
+MSG_LATENCY_MS
+Latenz (ms):
+; Latency (ms):
+;
+MSG_STEREO_SEPARATION_0_10
+Stereo-Trennung (0-10):
+; Stereo separation (0-10):
+;
+MSG_STEREO_MIX_DELAY
+Stereo-Mixverz\xF6gerung:
+; Stereo mix delay:
+;
+MSG_FLOPPY_SOUNDS
+Floppy-Ger\xE4usche
+; Floppy sounds
+;
+MSG_DF0_DRIVE_SOUNDS
+DF0 Laufwerksger\xE4usche
+; DF0 drive sounds
+;
+MSG_DF1_DRIVE_SOUNDS
+DF1 Laufwerksger\xE4usche
+; DF1 drive sounds
+;
+MSG_DF2_DRIVE_SOUNDS
+DF2 Laufwerksger\xE4usche
+; DF2 drive sounds
+;
+MSG_DF3_DRIVE_SOUNDS
+DF3 Laufwerksger\xE4usche
+; DF3 drive sounds
+;
+MSG_ATTENUATION
+D\xE4mpfung %:
+; Attenuation %:
+;
+MSG_NORMAL
+Normal
+; Normal
+;
+MSG_INTERPOLATION
+Interpolation:
+; Interpolation:
+;
+MSG_KICKSTART
+Kickstart
+; Kickstart
+;
+MSG_IDLE_0_120
+Idle (0-120):
+; Idle (0-120):
+;
+MSG_CPU
+CPU
+; CPU
+;
+MSG_CACHE
+Cache:
+; Cache:
+;
+MSG_JIT_COMPILER
+JIT-Compiler
+; JIT compiler
+;
+MSG_HINT_START
+Startet die Emulation mit den aktuellen Einstellungen.
+; Start the emulation with the current settings.
+;
+MSG_HINT_PAUSE
+Haelt die laufende Emulation an bzw. setzt sie fort.
+; Pause the running emulation, or continue it.
+;
+MSG_HINT_RESET
+Setzt den emulierten Amiga zurueck, wie der Reset-Knopf.
+; Reset the emulated Amiga, like pressing its reset button.
+;
+MSG_HINT_STOP
+Stoppt die Emulation und kehrt zu den Einstellungen zurueck.
+; Stop the emulation and return to the settings.
+;
+MSG_HINT_QUIT
+Beendet E-UAE.
+; Quit E-UAE.
+;
+MSG_HINT_MEDIA_ROM
+Kickstart-ROM-Abbild fuer den emulierten Amiga.
+; Kickstart ROM image used by the emulated Amiga.
+;
+MSG_HINT_MEDIA_ROM_SEL
+Waehlt die Kickstart-ROM-Datei aus.
+; Choose the Kickstart ROM file.
+;
+MSG_HINT_MEDIA_EXT
+Optionales Erweiterungs-ROM. Der CD32 braucht hier sein 512-KB-Erweiterungs-ROM - oder man nimmt das 1-MB-CD32-ROM (Kickstart und Erweiterungs-ROM in einer Datei) als Kickstart und laesst dieses Feld leer.
+; Optional extended ROM. The CD32 needs its 512 KB extended ROM here - or use the 1 MB CD32 ROM (Kickstart and extended ROM in one file) as Kickstart and leave this empty.
+;
+MSG_HINT_MEDIA_EXT_SEL
+Waehlt die Erweiterungs-ROM-Datei aus.
+; Choose the extended ROM file.
+;
+MSG_HINT_MEDIA_KEY
+Schluesseldatei fuer verschluesselte ROM-Abbilder (Cloanto Amiga Forever).
+; Keyfile for encrypted ROM images (Cloanto Amiga Forever).
+;
+MSG_HINT_MEDIA_KEY_SEL
+Waehlt die Schluesseldatei aus.
+; Choose the keyfile.
+;
+MSG_HINT_MEDIA_DFTYPE
+Typ dieses Diskettenlaufwerks. Aus schaltet es ab.
+; Type of this floppy drive. Off disables the drive.
+;
+MSG_HINT_MEDIA_DFFILE
+Disk-Image in diesem Laufwerk: ADF, ADZ oder DMS, auch gepackt in einem ZIP-, GZ-, LHA- oder LZX-Archiv (das erste Disk-Image darin; ein anderes mit archiv.lha/name.adf).
+; Disk image inserted in this drive: ADF, ADZ or DMS, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
+;
+MSG_HINT_MEDIA_DFSEL
+Waehlt ein Diskettenabbild fuer dieses Laufwerk aus.
+; Choose a disk image for this drive.
+;
+MSG_HINT_MEDIA_DFEJECT
+Wirft die Diskette aus diesem Laufwerk aus.
+; Eject the disk from this drive.
+;
+MSG_HINT_MEDIA_FLOPPYSPEED
+Geschwindigkeit der Diskettenlaufwerke. Turbo laedt so schnell wie moeglich, manche Software braucht aber die Originalgeschwindigkeit.
+; Floppy drive speed. Turbo loads as fast as possible, but some software needs the original speed.
+;
+MSG_HINT_HARDWARE_MODEL
+Vorgaben fuer gaengige Amiga-Modelle. Stellt CPU, Chipsatz und Speicher ein; ROM und Laufwerke bleiben unveraendert. CD32 schaltet zusaetzlich den Akiko-Chip mit seinem CD-Laufwerk ein - Kickstart und Erweiterungs-ROM des CD32 waehlt man auf der Seite "Medien".
+; Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page.
+;
+MSG_HINT_HARDWARE_CPU
+Zu emulierender Prozessor. 68020 + 68881 erg\xE4nzt eine Flie\xDFkommaeinheit (FPU), 68040 und 68060 haben immer eine. Der JIT-Compiler braucht einen 68020 oder h\xF6her mit 32-Bit-Adressierung.
+; Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_SPEED
+Maximal laeuft so schnell wie der Host erlaubt. Original haelt die Geschwindigkeit eines echten Amiga.
+; Maximum runs as fast as the host allows. Original keeps the speed of a real Amiga.
+;
+MSG_HINT_HARDWARE_IDLE
+Gibt dem System Rechenzeit zurueck, solange der Amiga untaetig ist. 0 = aus; sonst schlaeft E-UAE 1 ms nach je n Rasterzeilen, in denen der Amiga wartet - kleinere Werte sparen also mehr (z. B. 30-60). Wirkt nur bei CPU-Takt Maximal.
+; Gives CPU time back to the system while the Amiga is idle. 0 = off; otherwise E-UAE sleeps 1 ms after every n raster lines in which the Amiga waits, so smaller values save more (e.g. 30-60). Only works with CPU speed Maximum.
+;
+MSG_HINT_HARDWARE_COMPAT
+Kompatiblere, aber langsamere CPU-Emulation. Manche Spiele brauchen sie. Nicht verf\xFCgbar, solange der JIT-Compiler eingeschaltet ist.
+; More compatible, but slower CPU emulation. Needed by some games. Not available while the JIT compiler is on.
+;
+MSG_HINT_HARDWARE_CYCLEEXACT
+Zyklengenaues Timing f\xFCr anspruchsvolle Demos und Spiele. Sehr langsam. Vollst\xE4ndig zyklengenau nur beim 68000; ab 68020 sind nur Chip-RAM- und Interrupt-Timing exakt. Nicht verf\xFCgbar, solange der JIT-Compiler eingeschaltet ist.
+; Cycle-exact timing for demanding demos and games. Very slow. Fully cycle-exact only for the 68000; with a 68020 or higher only chip RAM and interrupt timing are exact. Not available while the JIT compiler is on.
+;
+MSG_HINT_HARDWARE_CHIPSET
+Zu emulierender Chipsatz: OCS (A500), ECS (A500+, A600) oder AGA (A1200, A4000).
+; Chipset to emulate: OCS (A500), ECS (A500+, A600) or AGA (A1200, A4000).
+;
+MSG_HINT_HARDWARE_COLLISION
+Welche Kollisionen zwischen Sprites und Playfields erkannt werden. Hoehere Stufen sind genauer, aber langsamer.
+; Which sprite and playfield collisions are detected. Higher levels are more accurate but slower.
+;
+MSG_HINT_HARDWARE_NTSC
+NTSC-Videotiming (60 Hz) statt PAL (50 Hz) verwenden.
+; Use NTSC video timing (60 Hz) instead of PAL (50 Hz).
+;
+MSG_HINT_HARDWARE_IMMBLITS
+Blitter-Operationen sofort ausfuehren statt Zyklus fuer Zyklus. Schneller, etwas weniger kompatibel.
+; Run blitter operations immediately instead of cycle by cycle. Faster, slightly less compatible.
+;
+MSG_HINT_HARDWARE_BLITCYCLE
+Zyklengenauer Blitter. Manche Demos brauchen ihn, er ist aber langsamer.
+; Cycle-exact blitter. Needed by some demos, but slower.
+;
+MSG_HINT_HARDWARE_CHIP
+Groesse des Chip-RAM. Das Chip-RAM teilen sich die CPU sowie Grafik- und Soundhardware.
+; Chip RAM size. Chip RAM is shared by the CPU and the graphics and sound hardware.
+;
+MSG_HINT_HARDWARE_SLOW
+Slow-RAM (die Trapdoor-Speichererweiterung des A500).
+; Slow RAM (the trapdoor memory expansion of the A500).
+;
+MSG_HINT_HARDWARE_FAST
+Fast-RAM (Zorro II) fuer die CPU. Nicht verfuegbar bei mehr als 2 MB Chip-RAM.
+; Fast RAM (Zorro II) for the CPU. Not available with more than 2 MB Chip RAM.
+;
+MSG_HINT_HARDWARE_Z3
+Zorro-III-Fast-RAM. Braucht einen 68020 oder hoeher mit 32-Bit-Adressierung.
+; Zorro III Fast RAM. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_GFX
+Speicher der emulierten Picasso96-Grafikkarte. Braucht einen 68020 oder hoeher mit 32-Bit-Adressierung.
+; Memory of the emulated Picasso96 graphics card. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_JITCACHE
+Groesse des JIT-Uebersetzungscaches. Aus schaltet den JIT-Compiler ab. Braucht einen 68020 oder hoeher mit 32-Bit-Adressierung.
+; Size of the JIT translation cache. Off disables the JIT compiler. Needs a 68020 or higher with 32 bit addressing.
+;
+MSG_HINT_HARDWARE_JITHARD
+Wenn der Amiga seinen CPU-Cache leert, den gesamten \xFCbersetzten Code verwerfen (sicher, langsamer). Aus: Code behalten und nur Bl\xF6cke neu \xFCbersetzen, deren Speicher sich ge\xE4ndert hat (Pr\xFCfsummen-Test).
+; When the Amiga flushes its CPU cache, throw away all translated code (safe, slower). Off: keep the code and translate again only blocks whose memory has changed (checksum test).
+;
+MSG_HINT_HARDWARE_JITCONST
+Optimierung fuer Spruenge mit festem Ziel. Kann schneller sein, aber die Kompatibilitaet verringern.
+; Optimization for jumps with fixed targets. Can be faster, but may reduce compatibility.
+;
+MSG_HINT_HARDDISK_LIST
+Eingebundene Laufwerke und Verzeichnisse. Eintrag waehlen, um ihn zu bearbeiten.
+; Mounted drives and directories. Select an entry to edit it.
+;
+MSG_HINT_HARDDISK_DEVNAME
+Amiga-Geraetename des Laufwerks, z. B. DH0.
+; Amiga device name of the drive, for example DH0.
+;
+MSG_HINT_HARDDISK_VOLNAME
+Name des Volumes auf der Amiga-Seite.
+; Volume name shown on the Amiga side.
+;
+MSG_HINT_HARDDISK_PATH
+Host-Verzeichnis oder Hardfile, das dieses Laufwerk bereitstellt.
+; Host directory or hardfile that backs this drive.
+;
+MSG_HINT_HARDDISK_PATH_SEL
+Verzeichnis oder Hardfile per Dateirequester waehlen.
+; Choose the directory or hardfile with a file requester.
+;
+MSG_HINT_HARDDISK_READONLY
+Nur lesend einbinden. Der Amiga kann auf diesem Laufwerk nichts aendern.
+; Mount read-only. The Amiga cannot change anything on this drive.
+;
+MSG_HINT_HARDDISK_SECTORS
+Sektoren pro Spur (nur Hardfiles).
+; Sectors per track (hardfiles only).
+;
+MSG_HINT_HARDDISK_SURFACES
+Anzahl der Koepfe (nur Hardfiles).
+; Number of heads (hardfiles only).
+;
+MSG_HINT_HARDDISK_RESERVED
+Reservierte Bloecke am Anfang des Hardfiles.
+; Reserved blocks at the start of the hardfile.
+;
+MSG_HINT_HARDDISK_BLOCKSIZE
+Blockgroesse in Bytes (normalerweise 512).
+; Block size in bytes (normally 512).
+;
+MSG_HINT_HARDDISK_BOOTPRI
+Boot-Prioritaet. Das Laufwerk mit dem hoechsten Wert wird zuerst gebootet.
+; Boot priority. The drive with the highest value is booted first.
+;
+MSG_HINT_HARDDISK_ADD_DIR
+Fuegt ein Host-Verzeichnis als virtuelles Laufwerk hinzu.
+; Add a host directory as a virtual drive.
+;
+MSG_HINT_HARDDISK_ADD_HF
+Fuegt ein Hardfile (Festplattenabbild) als Laufwerk hinzu.
+; Add a hardfile (disk image) as a drive.
+;
+MSG_HINT_HARDDISK_CHANGE
+Uebernimmt die geaenderten Werte in den gewaehlten Eintrag.
+; Apply the edited values to the selected entry.
+;
+MSG_HINT_HARDDISK_REMOVE
+Entfernt den gewaehlten Eintrag aus der Liste.
+; Remove the selected entry from the list.
+;
+MSG_HINT_DISPLAY_SCREENTYPE
+Wo die Emulation geoeffnet wird: auf einem eigenen Screen, auf einem Public Screen wie der Workbench oder Nachfrage beim Start.
+; Where the emulation opens: on its own screen, on a public screen such as Workbench, or ask at startup.
+;
+MSG_HINT_DISPLAY_PUBSCREEN
+Name des Public Screens, auf dem das Emulatorfenster geoeffnet wird.
+; Name of the public screen the emulator window opens on.
+;
+MSG_HINT_DISPLAY_AFULL
+Eigenen Screen fuer die Amiga-Anzeige statt eines Fensters oeffnen, mit Vollbild-Breite und -Hoehe.
+; Open an own screen for the Amiga display instead of a window, with the fullscreen width and height.
+;
+MSG_HINT_DISPLAY_PFULL
+Eigenen Screen oeffnen, solange der Amiga einen Picasso96-Screen (RTG) zeigt. Schaltet er zurueck, gilt wieder die Einstellung fuer Amiga-Modi.
+; Open an own screen while the Amiga shows a Picasso96 (RTG) screen. When it switches back, the setting for Amiga modes applies again.
+;
+MSG_HINT_DISPLAY_WIN_W
+Breite des Emulatorfensters in Pixeln.
+; Width of the emulator window in pixels.
+;
+MSG_HINT_DISPLAY_WIN_H
+Hoehe des Emulatorfensters in Pixeln.
+; Height of the emulator window in pixels.
+;
+MSG_HINT_DISPLAY_FS_W
+Breite des Vollbildmodus in Pixeln.
+; Width of the fullscreen mode in pixels.
+;
+MSG_HINT_DISPLAY_FS_H
+Hoehe des Vollbildmodus in Pixeln.
+; Height of the fullscreen mode in pixels.
+;
+MSG_HINT_DISPLAY_LINEMODE
+Wie Zeilen gezeichnet werden. Doppelte Zeilen fuellen die volle Fensterhoehe; Scanlines lassen Luecken wie bei einer Roehre.
+; How lines are drawn. Double lines fill the full window height; Scanlines leave gaps like a CRT.
+;
+MSG_HINT_DISPLAY_XCENTER
+Das Bild im Fenster horizontal zentrieren.
+; Center the picture horizontally in the window.
+;
+MSG_HINT_DISPLAY_YCENTER
+Das Bild im Fenster vertikal zentrieren.
+; Center the picture vertically in the window.
+;
+MSG_HINT_DISPLAY_COLOR
+Farbtiefe der emulierten Anzeige.
+; Color depth of the emulated display.
+;
+MSG_HINT_DISPLAY_FRAMERATE
+Nur jedes n-te Bild zeichnen. Hoehere Werte sparen Rechenzeit.
+; Draw only every nth frame. Higher values save CPU time.
+;
+MSG_HINT_DISPLAY_REFRESH
+Bildwiederholrate fuer Vollbildmodi in Hz (0 = automatisch).
+; Refresh rate for fullscreen modes in Hz (0 = automatic).
+;
+MSG_HINT_DISPLAY_LORES
+Mit halber horizontaler Aufloesung rendern. Schneller, aber weniger scharf.
+; Render at half the horizontal resolution. Faster, but less sharp.
+;
+MSG_HINT_DISPLAY_ASPECT
+Das Seitenverhaeltnis der Pixel der emulierten Anzeige korrigieren.
+; Correct the pixel aspect ratio of the emulated display.
+;
+MSG_HINT_DISPLAY_VSYNC
+Das Zeichnen mit der Bildwiederholung synchronisieren, um Tearing zu vermeiden.
+; Synchronize drawing with the screen refresh to avoid tearing.
+;
+MSG_HINT_DISPLAY_DITHER
+Farbstufen mindern, wenn die Anzeige nur wenige Farben hat.
+; Reduce banding when the display has only a few colors.
+;
+MSG_HINT_DISPLAY_GREY
+Das Bild in Graustufen anzeigen.
+; Show the picture in grayscale.
+;
+MSG_HINT_DISPLAY_LEDS
+Die Power- und Laufwerks-LEDs im Bild anzeigen.
+; Show the power and drive LEDs inside the picture.
+;
+MSG_HINT_SOUND_MODE
+Aus: kein Sound. Emuliert: der Soundchip laeuft, es wird aber nichts ausgegeben. Normal und Exakt geben Sound aus; Exakt ist genauer, aber langsamer.
+; Off: no sound. Emulated: the sound chip runs but nothing is played. Normal and Exact play sound; Exact is more precise but slower.
+;
+MSG_HINT_SOUND_CHANNELS
+Mono- oder Stereo-Tonausgabe.
+; Mono or stereo sound output.
+;
+MSG_HINT_SOUND_FREQ
+Abtastrate der Tonausgabe. Hoeher bedeutet bessere Qualitaet, aber mehr CPU-Last.
+; Sample rate of the sound output. Higher means better quality but more CPU load.
+;
+MSG_HINT_SOUND_INTERPOL
+Glaettet den Ton. Sinc hat die hoechste Qualitaet, braucht aber die meiste Rechenzeit.
+; Smooths the sound. Sinc has the highest quality but needs the most CPU time.
+;
+MSG_HINT_SOUND_VOLUME
+Senkt die Ausgabelautstaerke in Prozent. 0 bedeutet volle Lautstaerke.
+; Lowers the output volume in percent. 0 means full volume.
+;
+MSG_HINT_SOUND_LATENCY
+Groesse des Soundpuffers in Millisekunden. Kleine Werte reagieren schneller, knistern aber eventuell.
+; Size of the sound buffer in milliseconds. Small values react faster but may crackle.
+;
+MSG_HINT_SOUND_SEPARATION
+Stereotrennung von 0 bis 10.
+; Stereo separation from 0 to 10.
+;
+MSG_HINT_SOUND_MIXDELAY
+Stereo-Mischverzoegerung (0 = aus).
+; Stereo mix delay (0 = off).
+;
+MSG_HINT_SOUND_CLICK
+Diskettenlaufwerks-Geraeusche (Klicken) fuer dieses Laufwerk abspielen.
+; Play floppy drive sounds (clicks) for this drive.
+;
+MSG_HINT_SOUND_CLICKVOL
+Lautstaerkeminderung der Laufwerksgeraeusche in Prozent.
+; Volume reduction for the drive sounds in percent.
+;
+MSG_HINT_INPUT_PORT0
+Geraet, das Amiga-Port 0 steuert (normalerweise die Maus).
+; Device that controls Amiga port 0 (normally the mouse).
+;
+MSG_HINT_INPUT_PORT1
+Geraet, das Amiga-Port 1 steuert (normalerweise der Joystick). Mit dem CD32-Akiko-Chip ist es ein CD32-Pad: die Joystick-Knoepfe 1-7 sind Rot, Blau, Gelb, Gruen, Vorspulen, Zurueckspulen und Play.
+; Device that controls Amiga port 1 (normally the joystick). With the CD32 Akiko chip it is a CD32 pad: joystick buttons 1-7 are red, blue, yellow, green, forward, reverse and play.
+;
+MSG_HINT_INPUT_KBDLANG
+Tastaturbelegung der emulierten Amiga-Tastatur.
+; Keyboard layout of the emulated Amiga keyboard.
+;
+MSG_HINT_INPUT_MOUSESPEED
+Mausempfindlichkeit in Prozent.
+; Mouse sensitivity in percent.
+;
+MSG_HINT_INPUT_HIDECURSOR
+Den System-Mauszeiger ausblenden, solange er im Emulatorfenster ist.
+; Hide the system mouse pointer while it is inside the emulator window.
+;
+MSG_HINT_CONFIG_DESC
+Freitextbeschreibung, die mit der Konfiguration gespeichert wird.
+; Free-text description saved with the configuration.
+;
+MSG_HINT_CONFIG_LOAD
+Laedt eine Konfigurationsdatei und uebernimmt sie.
+; Load a configuration file and apply it.
+;
+MSG_HINT_CONFIG_SAVE
+Speichert die aktuellen Einstellungen in der aktuellen Konfigurationsdatei.
+; Save the current settings to the current configuration file.
+;
+MSG_HINT_CONFIG_SAVEAS
+Speichert die aktuellen Einstellungen unter einem neuen Dateinamen.
+; Save the current settings under a new file name.
+;
+MSG_HINT_CONFIG_STATE_LOAD
+Laedt einen gespeicherten Emulationszustand (Savestate).
+; Load a saved emulation state (savestate).
+;
+MSG_HINT_CONFIG_STATE_SAVE
+Speichert den Zustand der laufenden Emulation in einer Datei.
+; Save the state of the running emulation to a file.
+;
+MSG_HINT_CONFIG_STARTGUI
+Dieses Einstellungsfenster bei jedem Start von E-UAE oeffnen.
+; Open this settings window every time E-UAE starts.
+;
+MSG_HINT_CONFIG_BSDSOCKET
+bsdsocket.library bereitstellen, damit emulierte Amiga-Programme das Netzwerk des Hosts nutzen koennen.
+; Provide bsdsocket.library so emulated Amiga programs can use the host network.
+;
+MSG_HINT_CONFIG_TODHACK
+Die Amiga-Uhr mit der Systemzeit abgleichen.
+; Keep the Amiga clock in sync with the system time.
+;
+MSG_SC_261
+Kuerzel
+; Shortcuts
+;
+MSG_SC_262
+Aktion
+; Action
+;
+MSG_SC_263
+Kombination
+; Shortcut
+;
+MSG_SC_264
+Gewaehltes Kuerzel
+; Selected shortcut
+;
+MSG_SC_265
+Strg
+; Ctrl
+;
+MSG_SC_266
+Alt links
+; Left Alt
+;
+MSG_SC_267
+Alt rechts
+; Right Alt
+;
+MSG_SC_268
+Amiga links
+; Left Amiga
+;
+MSG_SC_269
+Amiga rechts
+; Right Amiga
+;
+MSG_SC_270
+Shift links
+; Left Shift
+;
+MSG_SC_271
+Shift rechts
+; Right Shift
+;
+MSG_SC_272
+Taste:
+; Key:
+;
+MSG_SC_273
+Uebernehmen
+; Apply
+;
+MSG_SC_274
+Standard
+; Default
+;
+MSG_SC_275
+Alle Standard
+; All defaults
+;
+MSG_SC_276
+Die Hotkey-Datei konnte nicht geschrieben werden.
+; Could not write the hotkeys file.
+;
+MSG_SC_277
+Diese Kombination wird bereits verwendet von: %s
+; This combination is already used by: %s
+;
+MSG_SC_278
+Bitte mindestens eine Sondertaste waehlen (Strg, Alt, Amiga oder Shift).
+; Please select at least one modifier key (Ctrl, Alt, Amiga or Shift).
+;
+MSG_SC_279
+Es koennen hoechstens drei Sondertasten kombiniert werden.
+; At most three modifier keys can be combined.
+;
+MSG_SC_280
+E-UAE beenden
+; Quit E-UAE
+;
+MSG_SC_281
+Soft-Reset
+; Soft reset
+;
+MSG_SC_282
+Hard-Reset
+; Hard reset
+;
+MSG_SC_283
+Debugger starten
+; Enter debugger
+;
+MSG_SC_284
+Vollbild umschalten
+; Toggle fullscreen
+;
+MSG_SC_285
+Maus einfangen/freigeben
+; Toggle mouse grab
+;
+MSG_SC_286
+Bildausgabe anhalten
+; Inhibit screen drawing
+;
+MSG_SC_287
+Screenshot
+; Screenshot
+;
+MSG_SC_288
+Sound-Interpolation wechseln
+; Switch sound interpolation
+;
+MSG_SC_289
+Bilder ueberspringen erhoehen
+; Increase frame skip
+;
+MSG_SC_290
+Bilder ueberspringen verringern
+; Decrease frame skip
+;
+MSG_SC_291
+Diskette in DF0 einlegen
+; Insert disk in DF0
+;
+MSG_SC_292
+Diskette in DF1 einlegen
+; Insert disk in DF1
+;
+MSG_SC_293
+Diskette in DF2 einlegen
+; Insert disk in DF2
+;
+MSG_SC_294
+Diskette in DF3 einlegen
+; Insert disk in DF3
+;
+MSG_SC_295
+Diskette aus DF0 auswerfen
+; Eject disk from DF0
+;
+MSG_SC_296
+Diskette aus DF1 auswerfen
+; Eject disk from DF1
+;
+MSG_SC_297
+Diskette aus DF2 auswerfen
+; Eject disk from DF2
+;
+MSG_SC_298
+Diskette aus DF3 auswerfen
+; Eject disk from DF3
+;
+MSG_SC_299
+Savestate laden (Requester)
+; Load savestate (requester)
+;
+MSG_SC_300
+Savestate speichern (Requester)
+; Save savestate (requester)
+;
+MSG_SC_301
+Zustand aus Slot 0 laden
+; Load state slot 0
+;
+MSG_SC_302
+Zustand aus Slot 1 laden
+; Load state slot 1
+;
+MSG_SC_303
+Zustand aus Slot 2 laden
+; Load state slot 2
+;
+MSG_SC_304
+Zustand aus Slot 3 laden
+; Load state slot 3
+;
+MSG_SC_305
+Zustand aus Slot 4 laden
+; Load state slot 4
+;
+MSG_SC_306
+Zustand aus Slot 5 laden
+; Load state slot 5
+;
+MSG_SC_307
+Zustand aus Slot 6 laden
+; Load state slot 6
+;
+MSG_SC_308
+Zustand aus Slot 7 laden
+; Load state slot 7
+;
+MSG_SC_309
+Zustand aus Slot 8 laden
+; Load state slot 8
+;
+MSG_SC_310
+Zustand aus Slot 9 laden
+; Load state slot 9
+;
+MSG_SC_311
+Zustand in Slot 0 speichern
+; Save state slot 0
+;
+MSG_SC_312
+Zustand in Slot 1 speichern
+; Save state slot 1
+;
+MSG_SC_313
+Zustand in Slot 2 speichern
+; Save state slot 2
+;
+MSG_SC_314
+Zustand in Slot 3 speichern
+; Save state slot 3
+;
+MSG_SC_315
+Zustand in Slot 4 speichern
+; Save state slot 4
+;
+MSG_SC_316
+Zustand in Slot 5 speichern
+; Save state slot 5
+;
+MSG_SC_317
+Zustand in Slot 6 speichern
+; Save state slot 6
+;
+MSG_SC_318
+Zustand in Slot 7 speichern
+; Save state slot 7
+;
+MSG_SC_319
+Zustand in Slot 8 speichern
+; Save state slot 8
+;
+MSG_SC_320
+Zustand in Slot 9 speichern
+; Save state slot 9
+;
+MSG_SC_321
+Freeze-Taste (Cartridge)
+; Freeze button (cartridge)
+;
+MSG_SC_322
+Hotkeys des Emulatorfensters. Eintrag waehlen, um die Tastenkombination zu aendern.
+; Hotkeys of the emulator window. Select an entry to change its key combination.
+;
+MSG_SC_323
+Sondertasten dieses Kuerzels. In beliebiger Reihenfolge gedrueckt halten, danach die Taste druecken.
+; Modifier keys of this shortcut. Hold them down in any order, then press the key.
+;
+MSG_SC_324
+Die Taste, die zusammen mit den Sondertasten die Aktion ausloest.
+; The key that triggers the action together with the modifier keys.
+;
+MSG_SC_325
+Die gewaehlten Sondertasten und die Taste fuer diese Aktion verwenden. Wirkt sofort und wird gespeichert.
+; Use the selected modifier keys and key for this action. Takes effect at once and is saved.
+;
+MSG_SC_326
+Das Standardkuerzel der gewaehlten Aktion wiederherstellen.
+; Restore the default shortcut of the selected action.
+;
+MSG_SC_327
+Die Standardkuerzel aller Aktionen wiederherstellen.
+; Restore the default shortcuts of all actions.
+;
+MSG_IDE_CONTROLLER_GAYLE
+IDE-Controller (Gayle)
+; IDE controller (Gayle)
+;
+MSG_IDE_CONTROLLER
+Controller:
+; Controller:
+;
+MSG_IDE_GAYLE
+A600/A1200 (Gayle)
+; A600/A1200 (Gayle)
+;
+MSG_IDE_A4000
+A4000-IDE
+; A4000 IDE
+;
+MSG_IDE_MASTER_HARDFILE
+Hardfile Master:
+; Master hardfile:
+;
+MSG_IDE_SLAVE_HARDFILE
+Hardfile Slave:
+; Slave hardfile:
+;
+MSG_SELECT_IDE_HARDFILE
+IDE-Hardfile auswaehlen
+; Select IDE hardfile
+;
+MSG_HINT_HARDDISK_IDE
+Emulierter IDE-Controller: der Gayle-Chip des A600/A1200 oder die IDE-Schnittstelle des A4000. Er wird vom eingebauten scsi.device des Kickstarts benutzt, ein zusaetzlicher Treiber ist nicht noetig. Benoetigt ein passendes Kickstart und den passenden Chipsatz.
+; Emulated IDE controller: the Gayle chip of the A600/A1200 or the A4000 IDE interface. The Kickstart's own scsi.device uses it, so no extra driver is needed. Needs a matching Kickstart and chipset.
+;
+MSG_HINT_HARDDISK_IDE_MASTER
+Hardfile (Plattenabbild) am IDE-Master. Mit HDToolBox partitionieren oder ein Hardfile mit RDB verwenden.
+; Hardfile (disk image) on the IDE master drive. Partition it with HDToolBox, or use a hardfile with RDB.
+;
+MSG_HINT_HARDDISK_IDE_SLAVE
+Hardfile (Plattenabbild) am IDE-Slave. Leer lassen, wenn es kein zweites Laufwerk geben soll.
+; Hardfile (disk image) on the IDE slave drive. Leave empty for no second drive.
+;
+MSG_HINT_HARDDISK_IDE_SEL
+Das IDE-Hardfile ueber einen Dateirequester auswaehlen.
+; Choose the IDE hardfile with a file requester.
+;
+MSG_HINT_HARDDISK_IDE_RO
+Das IDE-Hardfile nur lesend oeffnen.
+; Open the IDE hardfile read-only.
+;
+MSG_COLUMN_CONTROLLER
+Controller
+; Controller
+;
+MSG_COLUMN_DRIVE
+Laufwerk
+; Drive
+;
+MSG_CTRL_UAE_SHORT
+UAE
+; UAE
+;
+MSG_CTRL_UAE
+UAE (uaehf.device)
+; UAE (uaehf.device)
+;
+MSG_CTRL_IDE_MASTER
+IDE-Master
+; IDE master
+;
+MSG_CTRL_IDE_SLAVE
+IDE-Slave
+; IDE slave
+;
+MSG_IDE_INTERFACE
+IDE-Schnittstelle:
+; IDE interface:
+;
+MSG_RDB_CHECK
+Hardfile hat RDB (Partitionstabelle)
+; Hardfile has RDB (partition table)
+;
+MSG_ERR_IDE_MASTER_BUSY
+Der IDE-Master-Platz ist bereits belegt.
+; The IDE master slot is already in use.
+;
+MSG_ERR_IDE_SLAVE_BUSY
+Der IDE-Slave-Platz ist bereits belegt.
+; The IDE slave slot is already in use.
+;
+MSG_IDE_OFF
+IDE-Schnittstelle ist aus
+; IDE interface is off
+;
+MSG_HINT_HARDDISK_CTRL
+Controller, an dem das Laufwerk haengt. UAE: das eigene uaehf.device von UAE, kein Kickstart-Treiber noetig. IDE: die emulierte IDE-Schnittstelle, bedient vom eingebauten scsi.device des Kickstarts (ein Master und ein Slave, Hardfile mit RDB).
+; Controller the drive is attached to. UAE: UAE's own uaehf.device, no Kickstart driver needed. IDE: the emulated IDE interface, served by the Kickstart's own scsi.device (one master and one slave, hardfile with RDB).
+;
+MSG_HINT_HARDDISK_RDB
+Das Hardfile enthaelt eine Partitionstabelle (RDB). Der Amiga liest die Partitionen daraus; Geometrie, Blockgroesse und Namen kommen aus dem Abbild. Wird beim Auswaehlen der Datei automatisch erkannt.
+; The hardfile contains a partition table (RDB). The Amiga reads the partitions from it; geometry, block size and names come from the image. Detected automatically when you choose the file.
+;
+MSG_NEW_DISK
+Neu...
+; New...
+;
+MSG_CREATE_BLANK_DISK_IMAGE
+Leeres Diskimage anlegen
+; Create blank disk image
+;
+MSG_ERR_FILE_EXISTS_REPLACE
+Die Datei '%s' existiert bereits.\nErsetzen?
+; The file '%s' already exists.\nReplace it?
+;
+MSG_YES_NO
+Ja|Nein
+; Yes|No
+;
+MSG_ERR_CREATE_DISK
+Das Diskimage '%s' konnte nicht angelegt werden.
+; Could not create the disk image '%s'.
+;
+MSG_HINT_MEDIA_DFNEW
+Ein neues, leeres Diskimage anlegen und in dieses Laufwerk einlegen. 3.5\"-DD- und -HD-Laufwerke bekommen eine formatierte Diskette (OFS), 5.25\"-Laufwerke eine unformatierte.
+; Create a new blank disk image and insert it into this drive. 3.5\" DD and HD drives get a formatted (OFS) disk, 5.25\" drives an unformatted one.
+;
+MSG_ERR_DISK_IN_USE
+Das Diskimage '%s' liegt in einem Laufwerk. Bitte zuerst auswerfen.
+; The disk image '%s' is inserted in a drive. Eject it first.
+;
+MSG_NEW_HARDFILE
+Neues Hardfile
+; New hardfile
+;
+MSG_SIZE_MB
+Gr\xF6\xDFe (MB):
+; Size (MB):
+;
+MSG_FILE_SYSTEM
+Dateisystem:
+; File system:
+;
+MSG_CREATE_DOTS
+Erstellen...
+; Create...
+;
+MSG_RDB_HDTOOLBOX
+RDB (mit HDToolBox partitionieren)
+; RDB (partition with HDToolBox)
+;
+MSG_CREATE_HARDFILE
+Hardfile erstellen
+; Create hardfile
+;
+MSG_ERR_HDF_SIZE
+Bitte eine Gr\xF6\xDFe zwischen 1 und %ld MB eingeben.
+; Please enter a size between 1 and %ld MB.
+;
+MSG_ERR_HDF_IN_USE
+Das Hardfile '%s' wird benutzt. Bitte zuerst aus der Liste entfernen.
+; The hardfile '%s' is in use. Remove it from the list first.
+;
+MSG_ERR_HDF_CREATE
+Das Hardfile '%s' konnte nicht erstellt werden.
+; Could not create the hardfile '%s'.
+;
+MSG_HDF_CREATED
+Hardfile erstellt: %s\n%lu MB, %lu Sektoren, %lu K\xF6pfe, %lu Zylinder.\nController w\xE4hlen und 'Hardfile hinzuf\xFCgen' anklicken.
+; Hardfile created: %s\n%lu MB, %lu sectors, %lu heads, %lu cylinders.\nChoose the controller and click 'Add hardfile'.
+;
+MSG_HINT_HARDDISK_NEWSIZE
+Gr\xF6\xDFe des neuen Hardfiles in MB.
+; Size of the new hardfile in MB.
+;
+MSG_HINT_HARDDISK_NEWFS
+Dateisystem, f\xFCr das das neue Hardfile gedacht ist. Sein DosType wird in die ersten 4 Bytes geschrieben, formatieren muss man es im Amiga. RDB: leere Platte zum Partitionieren mit HDToolBox (auch f\xFCr den IDE-Controller).
+; File system the new hardfile is meant for. Its DosType is written to the first 4 bytes, the Amiga still has to format it. RDB: empty disk for partitioning with HDToolBox (also for the IDE controller).
+;
+MSG_HINT_HARDDISK_NEWCREATE
+Ein leeres Hardfile anlegen (wie make_hdf) und sofort als Laufwerk eintragen: am oben gew\xE4hlten Controller, UAE-Laufwerke bekommen den n\xE4chsten freien Namen (DH0, DH1, ...) und eine passende Geometrie.
+; Create an empty hardfile (like make_hdf) and add it as a drive at once: with the controller chosen above, UAE drives get the next free name (DH0, DH1, ...) and a matching geometry.
+;
+MSG_HD_373
+, schreibgesch\xFCtzt
+; , read only
+;
+MSG_HD_374
+Ein Hardfile (Festplatten-Image) hinzuf\xFCgen oder ein neues anlegen.
+; Add a hardfile (hard disk image), or create a new one.
+;
+MSG_HD_375
+Ein Verzeichnis des Hosts als Amiga-Laufwerk hinzuf\xFCgen.
+; Add a host directory as an Amiga drive.
+;
+MSG_HD_376
+Verzeichnis hinzuf\xFCgen...
+; Add directory...
+;
+MSG_HD_377
+Hardfile hinzuf\xFCgen...
+; Add hardfile...
+;
+MSG_HD_378
+Erweitert
+; Advanced
+;
+MSG_HD_379
+Amiga-Ger\xE4tename des Laufwerks, z. B. DH0. Wird automatisch vergeben.
+; Amiga device name of the drive, for example DH0. Filled in automatically.
+;
+MSG_HD_380
+Einstellungen \xFCbernehmen.
+; Apply the settings.
+;
+MSG_HD_381
+Abbrechen
+; Cancel
+;
+MSG_HD_382
+Einstellungen des gew\xE4hlten Laufwerks \xE4ndern.
+; Change the settings of the selected drive.
+;
+MSG_HD_383
+Das Verzeichnis mit einem Dateirequester w\xE4hlen.
+; Choose the directory with a file requester.
+;
+MSG_HD_384
+Das Hardfile mit einem Dateirequester w\xE4hlen.
+; Choose the hardfile with a file requester.
+;
+MSG_HD_385
+Fenster ohne \xC4nderungen schlie\xDFen.
+; Close the window without changes.
+;
+MSG_HD_386
+Controller, an dem das Laufwerk h\xE4ngt. UAE: UAEs eigenes uaehf.device, kein Kickstart-Treiber n\xF6tig. IDE: die emulierte IDE-Schnittstelle des A600/A1200 (Gayle) oder A4000, bedient vom scsi.device des Kickstarts. Beide IDE-Laufwerke teilen sich eine Schnittstelle.
+; Controller the drive is attached to. UAE: UAE's own uaehf.device, no Kickstart driver needed. IDE: the emulated IDE interface of the A600/A1200 (Gayle) or A4000, served by the Kickstart's own scsi.device. Both IDE drives share one interface.
+;
+MSG_HD_387
+Ein leeres Hardfile anlegen (wie make_hdf) und f\xFCr dieses Laufwerk verwenden, mit passender Geometrie.
+; Create an empty hardfile (like make_hdf) and use it for this drive, with a matching geometry.
+;
+MSG_HD_388
+Ger\xE4t
+; Device
+;
+MSG_HD_389
+Ger\xE4t:
+; Device:
+;
+MSG_HD_390
+Verzeichnis
+; Directory
+;
+MSG_HD_391
+Laufwerke des emulierten Amiga. Doppelklick auf einen Eintrag zum Bearbeiten.
+; Drives of the emulated Amiga. Double-click an entry to edit it.
+;
+MSG_HD_392
+Verzeichnis bearbeiten
+; Edit directory
+;
+MSG_HD_393
+Hardfile bearbeiten
+; Edit hardfile
+;
+MSG_HD_394
+Bearbeiten...
+; Edit...
+;
+MSG_HD_395
+Datei nicht gefunden.
+; File not found.
+;
+MSG_HD_396
+Hardfile
+; Hardfile
+;
+MSG_HD_397
+Verzeichnis des Hosts, das als Amiga-Laufwerk erscheint.
+; Host directory that appears as an Amiga drive.
+;
+MSG_HD_398
+Datei des Hosts mit dem Festplatten-Image.
+; Host file that holds the hard disk image.
+;
+MSG_HD_399
+IDE A600/A1200 (Gayle)
+; IDE A600/A1200 (Gayle)
+;
+MSG_HD_400
+Info:
+; Info:
+;
+MSG_HD_401
+Master
+; Master
+;
+MSG_HD_402
+Neues Image
+; New image
+;
+MSG_HD_403
+Kein Hardfile gew\xE4hlt.
+; No hardfile chosen.
+;
+MSG_HD_404
+Anzahl der K\xF6pfe (nur Hardfiles ohne RDB).
+; Number of heads (hardfiles without RDB only).
+;
+MSG_HD_405
+Pfad
+; Path
+;
+MSG_HD_406
+Bitte zuerst ein Hardfile w\xE4hlen.
+; Please choose a hardfile first.
+;
+MSG_HD_407
+Position des Laufwerks an der IDE-Schnittstelle.
+; Position of the drive on the IDE interface.
+;
+MSG_HD_408
+Das gew\xE4hlte Laufwerk aus der Liste entfernen. Die Datei selbst wird nicht gel\xF6scht.
+; Remove the selected drive from the list. The file itself is not deleted.
+;
+MSG_HD_409
+Sektoren pro Spur (nur Hardfiles ohne RDB).
+; Sectors per track (hardfiles without RDB only).
+;
+MSG_HD_410
+Verzeichnis w\xE4hlen
+; Select directory
+;
+MSG_HD_411
+Gr\xF6\xDFe
+; Size
+;
+MSG_HD_412
+Gr\xF6\xDFe des Hardfiles und ob es eine Partitionstabelle (RDB) enth\xE4lt.
+; Size of the hardfile and whether it contains a partition table (RDB).
+;
+MSG_HD_413
+Slave
+; Slave
+;
+MSG_HD_414
+Das Verzeichnis '%s' ist bereits in der Liste.
+; The directory '%s' is already in the list.
+;
+MSG_HD_415
+Typ
+; Type
+;
+MSG_HD_416
+Volume-Name auf der Amiga-Seite. Leer gelassen wird der Verzeichnisname verwendet.
+; Volume name shown on the Amiga side. Taken from the directory name if left empty.
+;
+MSG_HD_417
+keine Partitionstabelle (RDB)
+; no partition table (RDB)
+;
+MSG_HD_418
+Partitionstabelle (RDB) gefunden
+; partition table (RDB) found
+;
+MSG_DISP_419
+Grafikkarte (RTG)
+; Graphics card (RTG)
+;
+MSG_DISP_420
+Hardware-Mauszeiger
+; Hardware mouse pointer
+;
+MSG_DISP_421
+VBlank-Interrupt
+; Vertical blank interrupt
+;
+MSG_DISP_422
+Die Grafikkarte zeigt den Mauszeiger selbst (Hardware-Sprite): kein Flackern und weniger Arbeit fuer Picasso96. Braucht einen 16- oder 32-Bit-Screen auf dem Host.
+; The graphics card shows the mouse pointer itself (hardware sprite): no flicker and less work for Picasso96. Needs a 16 or 32 bit host screen.
+;
+MSG_DISP_423
+Die Grafikkarte loest bei jedem vertikalen Strahlruecklauf einen Interrupt aus, wie echte Karten. Manche Programme brauchen das fuer ruckelfreies Scrollen.
+; The graphics card raises an interrupt at every vertical blank, like real cards. Some programs need it for smooth scrolling.
+;
+MSG_CD_424
+CD:
+; CD:
+;
+MSG_CD_425
+Einheit 1
+; Unit 1
+;
+MSG_CD_426
+Einheit 2
+; Unit 2
+;
+MSG_CD_427
+Einheit 3
+; Unit 3
+;
+MSG_CD_428
+Einheit 0:
+; Unit 0:
+;
+MSG_CD_429
+Einheit 1:
+; Unit 1:
+;
+MSG_CD_430
+Einheit 2:
+; Unit 2:
+;
+MSG_CD_431
+Einheit 3:
+; Unit 3:
+;
+MSG_CD_432
+CUE-Datei
+; CUE sheet
+;
+MSG_CD_433
+ISO-Image
+; ISO image
+;
+MSG_CD_434
+uaescsi.device, Einheit %d
+; uaescsi.device, unit %d
+;
+MSG_CD_435
+(keine CD)
+; (no disc)
+;
+MSG_CD_436
+Keine CD - das Laufwerk bleibt leer.
+; No disc - the drive stays empty.
+;
+MSG_CD_437
+Einheit %d von uaescsi.device wird schon von einem anderen CD-ROM-Laufwerk benutzt.
+; Unit %d of uaescsi.device is already used by another CD-ROM drive.
+;
+MSG_CD_438
+Das CD-Image '%s' wurde nicht gefunden.
+; The CD image '%s' was not found.
+;
+MSG_CD_439
+CD-Image waehlen
+; Select CD image
+;
+MSG_CD_440
+Wo das CD-ROM-Laufwerk angeschlossen ist. uaescsi.device: UAEs eigenes Device, Einheit 0, geht mit jeder Kickstart; das CD-Dateisystem braucht einen Mount-Eintrag mit Device = uaescsi.device, Unit = 0. IDE: ein ATAPI-Laufwerk an der emulierten IDE-Schnittstelle des A600/A1200 (Gayle) oder A4000, wie echte Hardware; braucht ein scsi.device mit ATAPI-Unterstuetzung (Kickstart 3.1.4 / 3.2 oder ein gepatchter Treiber). Beide IDE-Laufwerke teilen sich eine Schnittstelle. CD32 (Akiko): das Laufwerk des Amiga CD32; braucht Kickstart und Erweiterungs-ROM des CD32, die die CD selbst booten (Modellvorgabe CD32 auf der Seite "Hardware").
+; Where the CD-ROM drive is attached. uaescsi.device: UAE's own device, unit 0, works with every Kickstart; the CD file system needs a mount entry with Device = uaescsi.device, Unit = 0. IDE: an ATAPI drive at the emulated IDE interface of the A600/A1200 (Gayle) or A4000, like real hardware; needs a scsi.device with ATAPI support (Kickstart 3.1.4 / 3.2 or a patched driver). Both IDE drives share one interface. CD32 (Akiko): the drive of the Amiga CD32; needs the CD32 Kickstart and extended ROM, which boot the CD themselves (CD32 model preset on the Hardware page).
+;
+MSG_CD_441
+CD-Image im Laufwerk: eine ISO-Datei oder eine CUE-Datei mit ihren BIN-Dateien (auch mit Audio-Tracks). Leer lassen fuer ein Laufwerk ohne CD. Die CD laesst sich auf der Seite \"Medien\" wechseln, auch waehrend die Emulation laeuft.
+; CD image in the drive: an ISO file or a CUE sheet with its BIN files (also with audio tracks). Leave empty for a drive without a disc. The disc can be changed on the Media page, also while the emulation is running.
+;
+MSG_CD_442
+CD-Image mit dem Dateiauswahlfenster waehlen.
+; Choose the CD image with a file requester.
+;
+MSG_CD_443
+Groesse und Art des CD-Images.
+; Size and type of the CD image.
+;
+MSG_CD_444
+CD-ROM-Laufwerk
+; CD-ROM drive
+;
+MSG_CD_445
+uaescsi.device:
+; uaescsi.device:
+;
+MSG_CD_446
+Image:
+; Image:
+;
+MSG_CD_447
+CD-ROM-Laufwerk hinzufuegen
+; Add CD-ROM drive
+;
+MSG_CD_448
+CD-ROM-Laufwerk bearbeiten
+; Edit CD-ROM drive
+;
+MSG_CD_449
+CD-Laufwerk hinzufuegen...
+; Add CD-ROM drive...
+;
+MSG_CD_450
+Alle %d CD-ROM-Laufwerke sind schon belegt.
+; All %d CD-ROM drives are in use.
+;
+MSG_CD_451
+Das CD-ROM-Laufwerk fuer ISO- und CUE/BIN-Images hinzufuegen, an uaescsi.device oder als ATAPI-Laufwerk an der IDE-Schnittstelle. Ist schon eines da, wird es bearbeitet.
+; Add the CD-ROM drive for ISO and CUE/BIN images, at uaescsi.device or as ATAPI drive at the IDE interface. If there is one already, it is edited.
+;
+MSG_CD_452
+CD-ROM-Laufwerke
+; CD-ROM drives
+;
+MSG_CD_453
+CD-Image (ISO oder CUE-Datei) im CD-ROM-Laufwerk. Laesst sich auch waehrend der Emulation wechseln. Das CD-ROM-Laufwerk wird auf der Seite \"Festplatten\" angelegt.
+; CD image (ISO or CUE sheet) in the CD-ROM drive. Can be changed while the emulation is running. The CD-ROM drive is added on the Hard disks page.
+;
+MSG_CD_454
+Ein CD-Image fuer dieses Laufwerk waehlen.
+; Choose a CD image for this drive.
+;
+MSG_CD_455
+Die CD aus diesem Laufwerk auswerfen.
+; Eject the CD from this drive.
+;
+MSG_CD_456
+Booten
+; Boot
+;
+MSG_CD_457
+Von CD booten (als CD0: einbinden)
+; Boot from CD (mount as CD0:)
+;
+MSG_CD_458
+E-UAE liest das ISO-9660-Dateisystem der CD selbst und bindet das Laufwerk als CD0: ein - es steht im Bootmenue und laesst sich mit jeder Kickstart booten, auf der Amiga-Seite ist kein CD-Dateisystem und kein Mount-Eintrag noetig. Ein CD-Wechsel waehrend der Emulation wirkt bei neuen Dateizugriffen, der Volume-Name bleibt bis zum naechsten Reset.
+; E-UAE reads the ISO 9660 file system of the disc itself and mounts the drive as CD0: - it is in the boot menu and can be booted from with any Kickstart, no CD file system or mount entry needed on the Amiga side. A disc change while the emulation runs is seen by new file accesses, the volume name stays until the next reset.
+;
+MSG_CD_459
+Boot-Prioritaet von CD0:. Das Laufwerk mit dem hoechsten Wert bootet zuerst; mit -127 bootet die CD nur, wenn sie im Bootmenue gewaehlt wird (oder nichts anderes bootfaehig ist).
+; Boot priority of CD0:. The drive with the highest value is booted first; with -127 the CD is only booted when chosen in the boot menu (or when nothing else is bootable).
+;
+MSG_SET_460
+Projekt
+; Project
+;
+MSG_SET_461
+Ueber...
+; About...
+;
+MSG_SET_462
+Einstellungen...
+; Settings...
+;
+MSG_SET_463
+Ordner
+; Folders
+;
+MSG_SET_464
+Log
+; Log
+;
+MSG_SET_465
+Log-Ausgabe:
+; Log output:
+;
+MSG_SET_466
+E-UAE-Einstellungen
+; E-UAE settings
+;
+MSG_SET_467
+Kickstart-ROMs:
+; Kickstart ROMs:
+;
+MSG_SET_468
+Disketten-Images:
+; Floppy images:
+;
+MSG_SET_469
+Hardfiles:
+; Hardfiles:
+;
+MSG_SET_470
+CD-Images:
+; CD images:
+;
+MSG_SET_471
+Konfigurationen:
+; Configurations:
+;
+MSG_SET_472
+Savestates:
+; Savestates:
+;
+MSG_SET_473
+Fenster
+; Window
+;
+MSG_SET_474
+Datei (PROGDIR:E-UAE.log)
+; File (PROGDIR:E-UAE.log)
+;
+MSG_SET_475
+Ordner fuer Kickstart-ROM-Images. Die Dateirequester der GUI beginnen hier, solange noch keine Datei gewaehlt ist.
+; Folder for Kickstart ROM images. The file requesters of the GUI start here when no file is chosen yet.
+;
+MSG_SET_476
+Ordner fuer Disketten-Images (ADF, DMS, ...).
+; Folder for floppy disk images (ADF, DMS, ...).
+;
+MSG_SET_477
+Ordner fuer Hardfiles und Verzeichnisse, die als Laufwerk dienen.
+; Folder for hardfiles and directories used as drives.
+;
+MSG_SET_478
+Ordner fuer CD-Images (ISO, CUE/BIN).
+; Folder for CD images (ISO, CUE/BIN).
+;
+MSG_SET_479
+Ordner fuer Konfigurationsdateien (Laden / Speichern unter).
+; Folder for configuration files (Load / Save as).
+;
+MSG_SET_480
+Ordner fuer Savestates.
+; Folder for savestates.
+;
+MSG_SET_481
+Den Ordner mit einem Requester waehlen.
+; Choose the folder with a requester.
+;
+MSG_SET_482
+Wohin das E-UAE-Log geht. Aus: kein Ausgabefenster. Fenster: das Ausgabefenster wie bisher (wirkt beim naechsten Start). Datei: PROGDIR:E-UAE.log, bei jedem Start neu - praktisch fuer Fehlerberichte.
+; Where the E-UAE log goes. Off: no output window. Window: the output window as before (takes effect at the next start). File: PROGDIR:E-UAE.log, new at every start - useful for bug reports.
+;
+MSG_SET_483
+Die Einstellungen speichern und das Fenster schliessen.
+; Save the settings and close the window.
+;
+MSG_SET_484
+AmigaOS 4.1 PPC mit JIT, erstellt am
+; AmigaOS 4.1 PPC with JIT, built
+;
+MSG_SET_485
+E-UAE von Richard Drummond, basierend auf UAE von Bernd Schmidt und WinUAE von Toni Wilen.
+; E-UAE by Richard Drummond, based on UAE by Bernd Schmidt and WinUAE by Toni Wilen.
+;
+MSG_SET_486
+ReAction-GUI und Erweiterungen (v1 - v17) von Falke_34.
+; ReAction GUI and extensions (v1 - v17) by Falke_34.
+;
+MSG_SET_487
+Freie Software unter der GNU General Public License.
+; Free software under the GNU General Public License.
+;
+MSG_SET_488
+Ueber E-UAE
+; About E-UAE
+;
+MSG_SET_489
+Die Einstellungen konnten nicht nach '%s' gespeichert werden.
+; Could not save the settings to '%s'.
+;
+MSG_SET_490
+PowerPC-JIT-Compiler von \xC1lmos Rajnai.
+; PowerPC JIT compiler by \xC1lmos Rajnai.
+;
+MSG_SET_491
+AmigaOS-4-Erweiterungen von Kjetil Hvalstrand, Fredrik Wikstrom und Josef Wegner.
+; AmigaOS 4 updates by Kjetil Hvalstrand, Fredrik Wikstrom and Josef Wegner.
+;
+MSG_SET_492
+CD32 (AGA, 2 MB, Akiko)
+; CD32 (AGA, 2 MB, Akiko)
+;
+MSG_SET_493
+CD32 (Akiko)
+; CD32 (Akiko)
+;
+MSG_SET_494
+CD32-Akiko-Chip (CD-Laufwerk, C2P, NVRAM)
+; CD32 Akiko chip (CD drive, C2P, NVRAM)
+;
+MSG_SET_495
+Der Spezialchip des Amiga CD32: CD-ROM-Controller (das CD-Laufwerk haengt daran), Chunky-to-Planar-Wandler und 1 KB NVRAM fuer Spielstaende (Datei PROGDIR:cd32.nvr). Braucht AGA sowie Kickstart und Erweiterungs-ROM des CD32. Der Joystick an Amiga-Port 1 wird zum CD32-Pad.
+; The custom chip of the Amiga CD32: CD-ROM controller (the CD drive is attached to it), chunky-to-planar converter and 1 KB NVRAM for game saves (file PROGDIR:cd32.nvr). Needs AGA and the CD32 Kickstart + extended ROM. The joystick in Amiga port 1 becomes a CD32 pad.
+;
+MSG_SET_496
+Bitte auf der Seite "Medien" eine Kickstart waehlen.
+; Please choose a Kickstart ROM on the Media page.
+;
+MSG_SET_497
+Modul:
+; Cartridge:
+;
+MSG_SET_498
+Modul-ROM waehlen
+; Select cartridge ROM
+;
+MSG_SET_499
+ROM eines Freezer-Moduls: Action Replay 1, 2 oder 3 (Abbild des echten Moduls) oder HRTMon. Strg+Alt+F (Seite "Kuerzel") friert das laufende Programm ein und oeffnet den Monitor des Moduls: Speicher ansehen und aendern, Trainer (unendlich Leben), Grafik rippen. Leer = kein Modul. Action Replay 2/3 sind fuer 68000-Amigas gedacht; HRTMon laeuft auch mit 68020 und hoeher.
+; Freezer cartridge ROM: Action Replay 1, 2 or 3 (a dump of the real cartridge) or HRTMon. Ctrl+Alt+F (Shortcuts page) freezes the running program and opens the cartridge's monitor: look at and change memory, trainers (infinite lives), rip graphics. Empty = no cartridge. Action Replay 2/3 are made for 68000 Amigas; HRTMon also works with 68020 and higher.
+;
+MSG_SET_500
+Die ROM-Datei des Moduls waehlen.
+; Choose the cartridge ROM file.
+;
+MSG_SET_501
+GUI nach dem Start ikonifizieren
+; Iconify the GUI after Start
+;
+MSG_SET_502
+Beim Start der Emulation wird das GUI-Fenster zu einem Icon auf der Workbench (Doppelklick darauf holt das Fenster zurueck). Mit dem Ikonifizieren-Gadget in der Titelleiste geht das auch jederzeit.
+; When the emulation is started, the GUI window becomes an icon on the Workbench (double-click it to get the window back). The window can also be iconified at any time with the iconify gadget in its title bar.
+;
+MSG_SET_503
+Mittlere Maustaste gibt den Mauszeiger frei
+; Middle mouse button releases the pointer
+;
+MSG_SET_504
+Im Fenster auf der Workbench gibt die mittlere Maustaste den Mauszeiger an die Workbench zurueck und macht das E-UAE-Fenster inaktiv. Zum Weitermachen ins Fenster klicken. Der Amiga bekommt dann keine mittlere Taste; im Vollbild bekommt er sie immer.
+; In a window on the Workbench, the middle mouse button gives the pointer back to the Workbench and makes the E-UAE window inactive. Click into the window to continue. The Amiga then gets no middle button; in full screen it always does.
+;

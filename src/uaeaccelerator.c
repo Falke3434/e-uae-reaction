@@ -32,8 +32,11 @@
 
 #include <exec/resident.h>
 
-#include <libraries/mpega.h>
-#include <proto/mpega.h>
+#if defined(HAVE_PROTO_MPEGA_H) && defined(HAVE_LIBRARIES_MPEGA_H)
+# define UAE_HAVE_MPEGA 1
+# include <libraries/mpega.h>
+# include <proto/mpega.h>
+#endif
 
 #include "include/native2amiga.h"
 
@@ -598,6 +601,8 @@ static uae_u32 REGPARAM2 accelerator_RawPlaybackTagList (TrapContext *context)
 
 /*******************************************************************************/
 
+#ifdef UAE_HAVE_MPEGA
+
 #define TOHOSTPTR( type, arg ) if (arg) arg = (type) get_real_address( (uaecptr) arg );
 
 MPEGA_STREAM *stream_to_host( MPEGA_STREAM *guest_mpega_stream, MPEGA_STREAM *host_mpega_stream);
@@ -645,6 +650,8 @@ MPEGA_CTRL *ctrl_to_host( MPEGA_CTRL *guest_mpega_ctrl, MPEGA_CTRL *host_mpega_c
 }
 
 
+#endif /* UAE_HAVE_MPEGA */
+
 /*******************************************************************************/
 
 /* AccCopyMem(dest,source,size)(a0/a1/d0) */
@@ -662,6 +669,8 @@ static uae_u32 REGPARAM2 accelerator_CopyMemQuick (TrapContext *context)
 	CopyMemQuick(AREG(0),AREG(1),DREG(0));
 	return context -> regs.regs[0];
 }
+
+#ifdef UAE_HAVE_MPEGA
 
 /* D0: handle, A0: input, A1: output, D1: size */
 static uae_u32 REGPARAM2 trap_MPEGA_decode_frame(TrapContext *ctx)
@@ -718,6 +727,14 @@ static uae_u32 REGPARAM2 trap_MPEGA_scale(TrapContext *ctx)
 	return DREG(0);
 }
 
+#else /* !UAE_HAVE_MPEGA: no mpega SDK headers, keep the vector table layout */
+
+static uae_u32 REGPARAM2 trap_MPEGA_decode_frame(TrapContext *ctx) { return 0; }
+static uae_u32 REGPARAM2 trap_MPEGA_time(TrapContext *ctx)         { return 0; }
+static uae_u32 REGPARAM2 trap_MPEGA_find_sync(TrapContext *ctx)    { return 0; }
+static uae_u32 REGPARAM2 trap_MPEGA_scale(TrapContext *ctx)        { return 0; }
+
+#endif /* UAE_HAVE_MPEGA */
 
 static const TrapHandler accelerator_funcs[] = {
 	acceleratorlib_init, 

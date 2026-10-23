@@ -12,6 +12,7 @@
 #include "sysdeps.h"
 
 #include "fsdb.h"
+#include "filesys_cdfs.h"   /* v16: built-in CD file system */
 
 #define TRACING_ENABLED 0
 #if TRACING_ENABLED

@@ -57,16 +57,12 @@ struct socketbase
 
 	/* host-specific fields below */
 
-	unsigned int sockAbort;	/* return value for scoket(...) */
-	int needAbort;		/* abort flag */
-	int thread_id;
-
-	struct MsgPort *ProxyPort;
-
+	struct bsd_proxy *px;	/* v17: host proxy process (od-amiga/bsdsock.c) */
 	uae_u32 logtagptr;
+	uae_u32 sigiomask, sigurgmask;
+};
 
-
-} *socketbases;
+extern struct socketbase *socketbases;
 
 
 #define LIBRARY_SIZEOF 36

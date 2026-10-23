@@ -91,3 +91,5 @@ extern int hdf_init (void);
 extern int isspecialdrive (const char *name);
 extern void filesys_cleanup (void);
 extern int filesys_is_readonly (const char *path);
+/* v16: built-in CD file system wanted (CD-ROM drive + cdimage0_boot) */
+extern int cdfs_wanted (void);

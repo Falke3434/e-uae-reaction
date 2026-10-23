@@ -133,11 +133,16 @@ am_uae_OBJECTS = main.$(OBJEXT) newcpu.$(OBJEXT) memory.$(OBJEXT) \
 	cia.$(OBJEXT) blitter.$(OBJEXT) autoconf.$(OBJEXT) \
 	traps.$(OBJEXT) ersatz.$(OBJEXT) keybuf.$(OBJEXT) \
 	expansion.$(OBJEXT) zfile.$(OBJEXT) cfgfile.$(OBJEXT) \
+	archive_lha.$(OBJEXT) archive_lzx.$(OBJEXT) lha_crcio.$(OBJEXT) \
+	lha_dhuf.$(OBJEXT) lha_header.$(OBJEXT) lha_huf.$(OBJEXT) \
+	lha_larc.$(OBJEXT) lha_maketbl.$(OBJEXT) lha_shuf.$(OBJEXT) \
+	lha_slide.$(OBJEXT) lha_util.$(OBJEXT) \
 	picasso96.$(OBJEXT) inputdevice.$(OBJEXT) gfxutil.$(OBJEXT) \
 	audio.$(OBJEXT) sinctable.$(OBJEXT) drawing.$(OBJEXT) \
 	native2amiga.$(OBJEXT) disk.$(OBJEXT) crc32.$(OBJEXT) \
 	savestate.$(OBJEXT) unzip.$(OBJEXT) uaeexe.$(OBJEXT) \
 	uaelib.$(OBJEXT) fdi2raw.$(OBJEXT) hotkeys.$(OBJEXT) \
+	gayle.$(OBJEXT) \
 	ar.$(OBJEXT) driveclick.$(OBJEXT) enforcer.$(OBJEXT) \
 	misc.$(OBJEXT) missing.$(OBJEXT) readcpu.$(OBJEXT)
 uae_OBJECTS = $(am_uae_OBJECTS)
@@ -160,6 +165,7 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/akiko.Po ./$(DEPDIR)/ar.Po \
 	./$(DEPDIR)/audio.Po ./$(DEPDIR)/autoconf.Po \
 	./$(DEPDIR)/blitops.Po ./$(DEPDIR)/blitter.Po \
+	./$(DEPDIR)/blkdev-cdimage.Po ./$(DEPDIR)/filesys_cdfs.Po \
 	./$(DEPDIR)/blkdev-libscg.Po ./$(DEPDIR)/blkdev.Po \
 	./$(DEPDIR)/bsdsocket-posix-new.Po ./$(DEPDIR)/bsdsocket.Po \
 	./$(DEPDIR)/build68k.Po ./$(DEPDIR)/catweasel.Po \
@@ -179,6 +185,7 @@ am__depfiles_remade = ./$(DEPDIR)/akiko.Po ./$(DEPDIR)/ar.Po \
 	./$(DEPDIR)/gencpu.Po ./$(DEPDIR)/gengenblitter.Po \
 	./$(DEPDIR)/genlinetoscr.Po ./$(DEPDIR)/gfxutil.Po \
 	./$(DEPDIR)/hardfile.Po ./$(DEPDIR)/hardfile_unix.Po \
+	./$(DEPDIR)/gayle.Po \
 	./$(DEPDIR)/hotkeys.Po ./$(DEPDIR)/identify.Po \
 	./$(DEPDIR)/inputdevice.Po ./$(DEPDIR)/keybuf.Po \
 	./$(DEPDIR)/main.Po ./$(DEPDIR)/make_hdf.Po \
@@ -193,7 +200,7 @@ am__depfiles_remade = ./$(DEPDIR)/akiko.Po ./$(DEPDIR)/ar.Po \
 	./$(DEPDIR)/tui.Po ./$(DEPDIR)/uaeaccelerator.Po \
 	./$(DEPDIR)/uaeexe.Po ./$(DEPDIR)/uaelib.Po \
 	./$(DEPDIR)/unzip.Po ./$(DEPDIR)/writelog.Po \
-	./$(DEPDIR)/zfile.Po
+	./$(DEPDIR)/zfile.Po ./$(DEPDIR)/archive_lha.Po ./$(DEPDIR)/archive_lzx.Po ./$(DEPDIR)/lha_crcio.Po ./$(DEPDIR)/lha_dhuf.Po ./$(DEPDIR)/lha_header.Po ./$(DEPDIR)/lha_huf.Po ./$(DEPDIR)/lha_larc.Po ./$(DEPDIR)/lha_maketbl.Po ./$(DEPDIR)/lha_shuf.Po ./$(DEPDIR)/lha_slide.Po ./$(DEPDIR)/lha_util.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -456,7 +463,7 @@ DIST_SUBDIRS = \
 	gfx-amigaos gfx-beos gfx-x11 gfx-sdl gfx-curses gfx-svga \
 	sd-none sd-alsa sd-amigaos sd-beos sd-sdl sd-solaris sd-uss \
 	jd-none jd-amigainput jd-amigaos jd-beos jd-linuxold jd-sdl \
-	gui-none gui-beos gui-cocoa gui-gtk gui-muirexx \
+	gui-none gui-beos gui-cocoa gui-gtk gui-muirexx gui-reaction \
 	od-generic od-amiga od-beos od-linux od-macosx od-win32 \
 	td-none td-amigaos td-beos td-posix td-sdl td-win32 \
 	keymap \
@@ -493,8 +500,9 @@ dist_noinst_DATA = \
 
 noinst_HEADERS = \
 	include/akiko.h		include/ar.h		\
+	include/gayle.h		\
 	include/audio.h		include/autoconf.h	\
-	include/blitter.h	include/blkdev.h	\
+	include/blitter.h	include/blkdev.h	include/cdimage.h	include/filesys_cdfs.h	\
 	include/bsdsocket.h 	include/caps.h		\
 	include/catweasel.h     include/cdrom.h         \
 	include/cia.h		                        \
@@ -535,6 +543,7 @@ noinst_HEADERS = \
 	include/version.h                               \
 	include/writelog.h \
 	include/xwin.h		include/zfile.h		\
+	include/lha.h		include/lha_macro.h	\
 	targets/t-amiga.h	targets/t-beos.h        \
 	targets/t-unix.h	targets/t-win32.h
 
@@ -550,9 +559,11 @@ uae_SOURCES = \
 	main.c newcpu.c memory.c events.c custom.c serial.c cia.c \
 	blitter.c autoconf.c traps.c ersatz.c keybuf.c expansion.c \
 	zfile.c cfgfile.c picasso96.c inputdevice.c \
+	archive_lha.c archive_lzx.c lha_crcio.c lha_dhuf.c lha_header.c lha_huf.c \
+	lha_larc.c lha_maketbl.c lha_shuf.c lha_slide.c lha_util.c \
 	gfxutil.c audio.c sinctable.c drawing.c \
 	native2amiga.c disk.c crc32.c savestate.c unzip.c \
-	uaeexe.c uaelib.c fdi2raw.c hotkeys.c \
+	uaeexe.c uaelib.c fdi2raw.c hotkeys.c gayle.c \
 	ar.c driveclick.c enforcer.c misc.c \
 	missing.c readcpu.c
 
@@ -565,7 +576,7 @@ EXTRA_uae_SOURCES = \
 	hardfile_unix.c scsi-none.c \
 	ppc_disasm.c scsiemul.c svgancui.c tui.c \
 	blkdev-libscg.c filesys_unix.c \
-	akiko.c ar.c blkdev.c blitops.c \
+	akiko.c ar.c blkdev.c blkdev-cdimage.c filesys_cdfs.c blitops.c \
 	writelog.c
 
 uae_DEPENDENCIES = \
@@ -729,6 +740,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/blitops.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/blitter.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/blkdev-libscg.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/blkdev-cdimage.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/filesys_cdfs.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/blkdev.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bsdsocket-posix-new.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/bsdsocket.Po@am__quote@ # am--include-marker
@@ -766,6 +779,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gfxutil.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hardfile.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hardfile_unix.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gayle.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/hotkeys.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/identify.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/inputdevice.Po@am__quote@ # am--include-marker
@@ -795,6 +809,17 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/unzip.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/writelog.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/zfile.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/archive_lha.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/archive_lzx.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_crcio.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_dhuf.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_header.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_huf.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_larc.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_maketbl.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_shuf.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_slide.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/lha_util.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -1030,6 +1055,8 @@ distclean: distclean-recursive
 	-rm -f ./$(DEPDIR)/blitops.Po
 	-rm -f ./$(DEPDIR)/blitter.Po
 	-rm -f ./$(DEPDIR)/blkdev-libscg.Po
+	-rm -f ./$(DEPDIR)/blkdev-cdimage.Po
+	-rm -f ./$(DEPDIR)/filesys_cdfs.Po
 	-rm -f ./$(DEPDIR)/blkdev.Po
 	-rm -f ./$(DEPDIR)/bsdsocket-posix-new.Po
 	-rm -f ./$(DEPDIR)/bsdsocket.Po
@@ -1067,6 +1094,7 @@ distclean: distclean-recursive
 	-rm -f ./$(DEPDIR)/gfxutil.Po
 	-rm -f ./$(DEPDIR)/hardfile.Po
 	-rm -f ./$(DEPDIR)/hardfile_unix.Po
+	-rm -f ./$(DEPDIR)/gayle.Po
 	-rm -f ./$(DEPDIR)/hotkeys.Po
 	-rm -f ./$(DEPDIR)/identify.Po
 	-rm -f ./$(DEPDIR)/inputdevice.Po
@@ -1096,6 +1124,17 @@ distclean: distclean-recursive
 	-rm -f ./$(DEPDIR)/unzip.Po
 	-rm -f ./$(DEPDIR)/writelog.Po
 	-rm -f ./$(DEPDIR)/zfile.Po
+	-rm -f ./$(DEPDIR)/archive_lha.Po
+	-rm -f ./$(DEPDIR)/archive_lzx.Po
+	-rm -f ./$(DEPDIR)/lha_crcio.Po
+	-rm -f ./$(DEPDIR)/lha_dhuf.Po
+	-rm -f ./$(DEPDIR)/lha_header.Po
+	-rm -f ./$(DEPDIR)/lha_huf.Po
+	-rm -f ./$(DEPDIR)/lha_larc.Po
+	-rm -f ./$(DEPDIR)/lha_maketbl.Po
+	-rm -f ./$(DEPDIR)/lha_shuf.Po
+	-rm -f ./$(DEPDIR)/lha_slide.Po
+	-rm -f ./$(DEPDIR)/lha_util.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-hdr distclean-local distclean-tags
@@ -1148,6 +1187,8 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f ./$(DEPDIR)/blitops.Po
 	-rm -f ./$(DEPDIR)/blitter.Po
 	-rm -f ./$(DEPDIR)/blkdev-libscg.Po
+	-rm -f ./$(DEPDIR)/blkdev-cdimage.Po
+	-rm -f ./$(DEPDIR)/filesys_cdfs.Po
 	-rm -f ./$(DEPDIR)/blkdev.Po
 	-rm -f ./$(DEPDIR)/bsdsocket-posix-new.Po
 	-rm -f ./$(DEPDIR)/bsdsocket.Po
@@ -1185,6 +1226,7 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f ./$(DEPDIR)/gfxutil.Po
 	-rm -f ./$(DEPDIR)/hardfile.Po
 	-rm -f ./$(DEPDIR)/hardfile_unix.Po
+	-rm -f ./$(DEPDIR)/gayle.Po
 	-rm -f ./$(DEPDIR)/hotkeys.Po
 	-rm -f ./$(DEPDIR)/identify.Po
 	-rm -f ./$(DEPDIR)/inputdevice.Po
@@ -1214,6 +1256,17 @@ maintainer-clean: maintainer-clean-recursive
 	-rm -f ./$(DEPDIR)/unzip.Po
 	-rm -f ./$(DEPDIR)/writelog.Po
 	-rm -f ./$(DEPDIR)/zfile.Po
+	-rm -f ./$(DEPDIR)/archive_lha.Po
+	-rm -f ./$(DEPDIR)/archive_lzx.Po
+	-rm -f ./$(DEPDIR)/lha_crcio.Po
+	-rm -f ./$(DEPDIR)/lha_dhuf.Po
+	-rm -f ./$(DEPDIR)/lha_header.Po
+	-rm -f ./$(DEPDIR)/lha_huf.Po
+	-rm -f ./$(DEPDIR)/lha_larc.Po
+	-rm -f ./$(DEPDIR)/lha_maketbl.Po
+	-rm -f ./$(DEPDIR)/lha_shuf.Po
+	-rm -f ./$(DEPDIR)/lha_slide.Po
+	-rm -f ./$(DEPDIR)/lha_util.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

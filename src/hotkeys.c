@@ -40,9 +40,18 @@ void reset_hotkeys (void) {
     }
 }
 
+/*
+ * Key down: all keys of a sequence except the last one (the modifiers) may
+ * be pressed in any order; the last key has to come last. Before, the keys
+ * had to be pressed exactly in table order (Ctrl+Alt worked, Alt+Ctrl not).
+ * If several sequences match (e.g. Ctrl+Alt+R and Ctrl+Alt+Shift+R), the
+ * longest one wins.
+ */
 int match_hotkey_sequence (int key, int state)
 {
     struct uae_hotkeyseq *seq = hotkey_table;
+    struct uae_hotkeyseq *best = 0;
+    int bestlen = 0;
     int event = 0;
 
     if (!seq)
@@ -51,23 +60,28 @@ int match_hotkey_sequence (int key, int state)
     if (state) {
 	/* Key down */
 	while (seq->event != 0) {
-	    int i;
-	    /* Check whether key is the next key in this sequence */
-	    if (key == seq->keyseq[0])
-		seq->key_pressed[0] = 1;
-	    for (i=1; i < HOTKEYSEQ_MAXKEYS; i++) {
-		if ((seq->key_pressed[i-1] == 1) && (key == seq->keyseq[i])) {
+	    int i, last = -1;
+
+	    for (i = 0; i < HOTKEYSEQ_MAXKEYS && seq->keyseq[i] != (uae_u16)-1; i++)
+		last = i;
+	    for (i = 0; i <= last; i++)
+		if (key == seq->keyseq[i])
 		    seq->key_pressed[i] = 1;
-		    /* Was it the final key in this sequence ? */
-		    if ((i+1 == HOTKEYSEQ_MAXKEYS) || (seq->keyseq[i+1] == (uae_u16)-1)) {
-			/* Yes. Return the event */
-			event = seq->event;
-			seq->complete = 1;
+	    if (last >= 0 && key == seq->keyseq[last]) {
+		/* final key: are all modifiers held down? */
+		for (i = 0; i < last; i++)
+		    if (!seq->key_pressed[i])
 			break;
-		    }
+		if (i == last && last + 1 > bestlen) {
+		    best = seq;
+		    bestlen = last + 1;
 		}
 	    }
 	    seq++;
+	}
+	if (best) {
+	    best->complete = 1;
+	    event = best->event;
 	}
     } else {
 	/* key up */
@@ -75,10 +89,9 @@ int match_hotkey_sequence (int key, int state)
 	    int i, j;
 	    for (i = 0; i < HOTKEYSEQ_MAXKEYS; i++) {
 		if ((key == seq->keyseq[i]) && (seq->key_pressed[i] == 1)) {
-		    /* letting up a key - cancels any keys following it
-		     * in the sequence that are pressed */
-		    for (j=i; j < HOTKEYSEQ_MAXKEYS; j++)
-			seq->key_pressed[j] = 0;
+		    /* letting up a key: only this key is no longer held (the
+		     * order of the modifiers doesn't matter any more) */
+		    seq->key_pressed[i] = 0;
 		    /* if it was previously complete generate return the event
 		     * (so that it can be used as a key-up event */
 		    if (seq->complete) {
