@@ -296,7 +296,7 @@ static int handle (ULONG gid, ULONG code)
 	default:
 	    if (gid >= GID_DFSEL && gid < GID_DFSEL + 4) {
 		n = gid - GID_DFSEL;
-		choose (RA_DIR_FLOPPY, g_dffile[n], "Select disk image", "#?.(adf|adz|dms|ipf|zip|gz|lha|lzh|lzx|dsk)", FALSE);
+		choose (RA_DIR_FLOPPY, g_dffile[n], "Select disk image", "#?.(adf|adz|dms|fdi|zip|gz|lha|lzh|lzx|dsk)", FALSE);
 	    } else if (gid >= GID_DFEJECT && gid < GID_DFEJECT + 4) {
 		n = gid - GID_DFEJECT;
 		ra_set_text (g_dffile[n], "");
@@ -359,7 +359,7 @@ static const struct ra_hint hints[] = {
     { GID_CART, 1, "Freezer cartridge ROM: Action Replay 1, 2 or 3 (a dump of the real cartridge) or HRTMon. Ctrl+Alt+F (Shortcuts page) freezes the running program and opens the cartridge's monitor: look at and change memory, trainers (infinite lives), rip graphics. Empty = no cartridge. Action Replay 2/3 are made for 68000 Amigas; HRTMon also works with 68020 and higher." },
     { GID_CART_SEL, 1, "Choose the cartridge ROM file." },
     { GID_DFTYPE, 4, "Type of this floppy drive. Off disables the drive." },
-    { GID_DFFILE, 4, "Disk image inserted in this drive: ADF, ADZ or DMS, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf)." },
+    { GID_DFFILE, 4, "Disk image inserted in this drive: ADF, ADZ, DMS or FDI, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf)." },
     { GID_DFSEL, 4, "Choose a disk image for this drive." },
     { GID_DFNEW, 4, "Create a new blank disk image and insert it into this drive. 3.5\" DD and HD drives get a formatted (OFS) disk, 5.25\" drives an unformatted one." },
     { GID_DFEJECT, 4, "Eject the disk from this drive." },

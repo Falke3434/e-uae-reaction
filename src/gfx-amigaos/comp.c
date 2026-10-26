@@ -51,6 +51,8 @@ static struct Hook hook;
 static CompositeHookData hookData;
 
 void BackFill_Func(struct RastPort *ArgRP, struct BackFillArgs *MyArgs);
+int comp_window_to_source (int wx, int wy, int *sx, int *sy);
+void BackFill_Area (int sx, int sy, int w, int h);
 void set_target_hookData( void );
 
 extern struct Window    *W;
@@ -110,14 +112,39 @@ static ULONG compositeHookFunc(
 	return 0;
 }
 
+/*
+ * v18 (TODO 4.3): aspect ratio in the composite. 1 = the chipset picture
+ * keeps its aspect ratio (same scale factor for X and Y, black borders),
+ * set from "Correct aspect ratio" by ami-win.c. RTG pictures always keep
+ * their aspect ratio. 0 = the chipset picture fills the window.
+ */
+int comp_keep_aspect = 0;
+
+/* inner area of the window (picture + borders) */
+static struct Rectangle win_rect;
+
 void BackFill_Func(struct RastPort *ArgRP, struct BackFillArgs *MyArgs)
 {
-	struct Rectangle rect;
 	if (W)
 	{
 		set_target_hookData();
 
 		register struct RastPort *RPort = W->RPort;
+
+		/* black borders around a picture that keeps its aspect ratio
+		 * (only with a composited picture - on an 8 bit screen the
+		 * picture is drawn into the window directly) */
+		if (hookData.srcBitMap)
+		{
+			if (rect.MinY > win_rect.MinY)
+				RectFillColor (RPort, win_rect.MinX, win_rect.MinY, win_rect.MaxX, rect.MinY - 1, 0xFF000000);
+			if (rect.MaxY < win_rect.MaxY)
+				RectFillColor (RPort, win_rect.MinX, rect.MaxY + 1, win_rect.MaxX, win_rect.MaxY, 0xFF000000);
+			if (rect.MinX > win_rect.MinX)
+				RectFillColor (RPort, win_rect.MinX, rect.MinY, rect.MinX - 1, rect.MaxY, 0xFF000000);
+			if (rect.MaxX < win_rect.MaxX)
+				RectFillColor (RPort, rect.MaxX + 1, rect.MinY, win_rect.MaxX, rect.MaxY, 0xFF000000);
+		}
 
 		LockLayer(0, RPort->Layer);
 		DoHookClipRects(&hook, RPort, rect_ptr);
@@ -159,19 +186,17 @@ void update_fullscreen_rect( int aspect )
 #endif
 }
 
- 	float lscaleX,lscaleY;
-
 void set_target_hookData( void )
 {
- 	float scaleX,scaleY;
 /*
 	if (W->BorderTop)	// this window, is a wb window.
 	{
 */
-	 	rect.MinX = W->BorderLeft;
- 		rect.MinY = W->BorderTop;
- 		rect.MaxX = W->Width - W->BorderRight - 1;
- 		rect.MaxY = W->Height - W->BorderBottom - 1;
+	 	win_rect.MinX = W->BorderLeft;
+ 		win_rect.MinY = W->BorderTop;
+ 		win_rect.MaxX = W->Width - W->BorderRight - 1;
+ 		win_rect.MaxY = W->Height - W->BorderBottom - 1;
+		rect = win_rect;
 		rect_ptr = &rect;
 /*
 	}
@@ -197,26 +222,56 @@ void set_target_hookData( void )
 		hookData.srcBitMap = comp_aga_RP.BitMap;
 	}
 
- 	scaleX = (destWidth + 0.5f) / hookData.srcWidth;
- 	scaleY = (destHeight + 0.5f) / hookData.srcHeight;
-
-	uint32 depth = GetBitMapAttr( hookData.srcBitMap ,BMA_DEPTH );
-
-/*
-	if ((lscaleX != scaleX) && (lscaleY != scaleY))
+	/* v18 (TODO 4.3): keep the aspect ratio - the picture gets the largest
+	 * size with the same factor for X and Y that fits into the window and
+	 * is centred; BackFill_Func() fills the borders. RTG always, the
+	 * chipset picture with "Correct aspect ratio". A window as large as
+	 * the picture stays exactly 1:1. */
+	if ((screen_is_picasso || comp_keep_aspect) && hookData.srcWidth > 0 && hookData.srcHeight > 0)
 	{
-		printf("src: d: %d w: %d, h: %d\n", depth, hookData.srcWidth, hookData.srcHeight );
-		printf("dst: %0.2f, %0.2f\n", destWidth, destHeight );
-		printf("Scale %0.2f  - %0.2f\n", scaleX, scaleY);
-		lscaleX = scaleX;
-		lscaleY = scaleY;
+		int32 dw = (int32) destWidth, dh = (int32) destHeight;
+		int32 pw, ph;
+
+		if ((int64_t) dw * hookData.srcHeight <= (int64_t) dh * hookData.srcWidth)
+		{
+			pw = dw;
+			ph = (int32) (((int64_t) hookData.srcHeight * dw + hookData.srcWidth / 2) / hookData.srcWidth);
+		}
+		else
+		{
+			ph = dh;
+			pw = (int32) (((int64_t) hookData.srcWidth * dh + hookData.srcHeight / 2) / hookData.srcHeight);
+		}
+		if (pw < 1) pw = 1;
+		if (ph < 1) ph = 1;
+		if (pw > dw) pw = dw;
+		if (ph > dh) ph = dh;
+		rect.MinX = win_rect.MinX + (dw - pw) / 2;
+		rect.MinY = win_rect.MinY + (dh - ph) / 2;
+		rect.MaxX = rect.MinX + pw - 1;
+		rect.MaxY = rect.MinY + ph - 1;
+		destWidth = pw;
+		destHeight = ph;
 	}
-*/
+
+	/* Scale factors in 16.16 fixed point, rounded up. The old formula
+	 * (dest + 0.5) / src gave 1.00087 instead of 1.0 when the window is as
+	 * large as the picture; CompositeTags() maps dest -> src by truncation,
+	 * so every row and column was shifted by one (first one doubled, last
+	 * one lost; with scanlines the top line pair was broken). Rounding up
+	 * keeps the last destination row/column covered when scaling up and is
+	 * exactly 1.0 for 1:1. */
+	{
+		uint32 dw = (uint32) destWidth, dh = (uint32) destHeight;
+		uint32 sw = hookData.srcWidth  > 0 ? (uint32) hookData.srcWidth  : 1;
+		uint32 sh = hookData.srcHeight > 0 ? (uint32) hookData.srcHeight : 1;
+
+		hookData.scaleX = (int32) (((uint64_t) dw * COMP_FIX_ONE + sw - 1) / sw);
+		hookData.scaleY = (int32) (((uint64_t) dh * COMP_FIX_ONE + sh - 1) / sh);
+	}
 
 	hookData.offsetX = rect_ptr -> MinX ;
 	hookData.offsetY = rect_ptr -> MinY;
-	hookData.scaleX = COMP_FLOAT_TO_FIX(scaleX);
-	hookData.scaleY = COMP_FLOAT_TO_FIX(scaleY);
 	hookData.retCode = COMPERR_Success;
 
 	hook.h_Entry = (HOOKFUNC) compositeHookFunc;
@@ -225,6 +280,64 @@ void set_target_hookData( void )
 
 
 
+
+/*
+ * v18: helpers for the RTG mouse pointer (ami-win.c). They use the picture
+ * area and scale of the last set_target_hookData().
+ */
+
+/* window position -> pixel of the source picture (clamped); 0 = no picture */
+int comp_window_to_source (int wx, int wy, int *sx, int *sy)
+{
+	int32 pw = rect.MaxX - rect.MinX + 1;
+	int32 ph = rect.MaxY - rect.MinY + 1;
+	int32 x, y;
+
+	if (pw <= 0 || ph <= 0 || hookData.srcWidth <= 0 || hookData.srcHeight <= 0)
+		return 0;
+	x = (int32) (((int64_t) (wx - rect.MinX) * hookData.srcWidth) / pw);
+	y = (int32) (((int64_t) (wy - rect.MinY) * hookData.srcHeight) / ph);
+	if (x < 0) x = 0;
+	if (y < 0) y = 0;
+	if (x >= hookData.srcWidth) x = hookData.srcWidth - 1;
+	if (y >= hookData.srcHeight) y = hookData.srcHeight - 1;
+	*sx = x;
+	*sy = y;
+	return 1;
+}
+
+/* composite only a part of the picture (source pixels) into the window -
+ * used to remove the mouse pointer from its old position without
+ * compositing the whole window */
+void BackFill_Area (int sx, int sy, int w, int h)
+{
+	struct Rectangle r;
+	int32 pw, ph;
+
+	if (!W || w <= 0 || h <= 0)
+		return;
+	set_target_hookData ();
+	if (!hookData.srcBitMap || hookData.srcWidth <= 0 || hookData.srcHeight <= 0)
+		return;
+	pw = rect.MaxX - rect.MinX + 1;
+	ph = rect.MaxY - rect.MinY + 1;
+	r.MinX = rect.MinX + (int32) (((int64_t) sx * pw) / hookData.srcWidth) - 2;
+	r.MinY = rect.MinY + (int32) (((int64_t) sy * ph) / hookData.srcHeight) - 2;
+	r.MaxX = rect.MinX + (int32) (((int64_t) (sx + w) * pw + hookData.srcWidth - 1) / hookData.srcWidth) + 2;
+	r.MaxY = rect.MinY + (int32) (((int64_t) (sy + h) * ph + hookData.srcHeight - 1) / hookData.srcHeight) + 2;
+	if (r.MinX < rect.MinX) r.MinX = rect.MinX;
+	if (r.MinY < rect.MinY) r.MinY = rect.MinY;
+	if (r.MaxX > rect.MaxX) r.MaxX = rect.MaxX;
+	if (r.MaxY > rect.MaxY) r.MaxY = rect.MaxY;
+	if (r.MinX > r.MaxX || r.MinY > r.MaxY)
+		return;
+	{
+		struct RastPort *RPort = W->RPort;
+		LockLayer (0, RPort->Layer);
+		DoHookClipRects (&hook, RPort, &r);
+		UnlockLayer (RPort->Layer);
+	}
+}
 
 #ifdef PICASSO96_SUPPORTED
 /*

@@ -1,7 +1,7 @@
 ; Deutsche Uebersetzung (E-UAE ReAction GUI). Zeichensatz: ISO-8859-1 (Latin-1).
 ; Platzhalter (%s, %d) und \n muessen unveraendert bleiben.
 ;
-## version $VER: E-UAE.catalog 1.3 (21.10.2026)
+## version $VER: E-UAE.catalog 1.4 (24.10.2026)
 ## codeset 0
 ## language deutsch
 ;
@@ -718,8 +718,8 @@ Typ dieses Diskettenlaufwerks. Aus schaltet es ab.
 ; Type of this floppy drive. Off disables the drive.
 ;
 MSG_HINT_MEDIA_DFFILE
-Disk-Image in diesem Laufwerk: ADF, ADZ oder DMS, auch gepackt in einem ZIP-, GZ-, LHA- oder LZX-Archiv (das erste Disk-Image darin; ein anderes mit archiv.lha/name.adf).
-; Disk image inserted in this drive: ADF, ADZ or DMS, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
+Disk-Image in diesem Laufwerk: ADF, ADZ, DMS oder FDI, auch gepackt in einem ZIP-, GZ-, LHA- oder LZX-Archiv (das erste Disk-Image darin; ein anderes mit archiv.lha/name.adf).
+; Disk image inserted in this drive: ADF, ADZ, DMS or FDI, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
 ;
 MSG_HINT_MEDIA_DFSEL
 Waehlt ein Diskettenabbild fuer dieses Laufwerk aus.
@@ -802,12 +802,12 @@ Groesse des JIT-Uebersetzungscaches. Aus schaltet den JIT-Compiler ab. Braucht e
 ; Size of the JIT translation cache. Off disables the JIT compiler. Needs a 68020 or higher with 32 bit addressing.
 ;
 MSG_HINT_HARDWARE_JITHARD
-Wenn der Amiga seinen CPU-Cache leert, den gesamten \xFCbersetzten Code verwerfen (sicher, langsamer). Aus: Code behalten und nur Bl\xF6cke neu \xFCbersetzen, deren Speicher sich ge\xE4ndert hat (Pr\xFCfsummen-Test).
-; When the Amiga flushes its CPU cache, throw away all translated code (safe, slower). Off: keep the code and translate again only blocks whose memory has changed (checksum test).
+Wenn der Amiga seinen CPU-Cache leert, den gesamten \xFCbersetzten Code verwerfen (nur f\xFCr Programme, die ihren eigenen Code ohne Cache-Leerung \xE4ndern; langsamer, kurze Stocker). Aus (Vorgabe, wie WinUAE): Code behalten und nur Bl\xF6cke neu \xFCbersetzen, deren Speicher sich ge\xE4ndert hat (Pr\xFCfsummen-Test).
+; When the Amiga flushes its CPU cache, throw away all translated code (only for programs that change their own code without telling the CPU; slower, short stalls). Off (default, as in WinUAE): keep the code and translate again only blocks whose memory has changed (checksum test).
 ;
 MSG_HINT_HARDWARE_JITCONST
-Optimierung fuer Spruenge mit festem Ziel. Kann schneller sein, aber die Kompatibilitaet verringern.
-; Optimization for jumps with fixed targets. Can be faster, but may reduce compatibility.
+Ein uebersetzter Block geht am Ziel von Spruengen mit festem Ziel (BRA, BSR, JMP und JSR an eine absolute Adresse) weiter, statt dort zu enden. Laengere Bloecke, schneller.
+; A translated block continues at the target of jumps with a fixed target (BRA, BSR, JMP and JSR to an absolute address) instead of ending there. Longer blocks, faster.
 ;
 MSG_HINT_HARDDISK_LIST
 Eingebundene Laufwerke und Verzeichnisse. Eintrag waehlen, um ihn zu bearbeiten.
@@ -930,8 +930,8 @@ Mit halber horizontaler Aufloesung rendern. Schneller, aber weniger scharf.
 ; Render at half the horizontal resolution. Faster, but less sharp.
 ;
 MSG_HINT_DISPLAY_ASPECT
-Das Seitenverhaeltnis der Pixel der emulierten Anzeige korrigieren.
-; Correct the pixel aspect ratio of the emulated display.
+Das Seitenverhaeltnis des Bildes erhalten, wenn Fenster oder Bildschirm eine andere Form haben: das Bild wird in beiden Richtungen gleich skaliert und zentriert, der Rest bleibt schwarz. Aus: das Bild fuellt das ganze Fenster. Bilder der Grafikkarte (RTG) behalten ihr Seitenverhaeltnis immer.
+; Keep the aspect ratio of the picture when the window or screen has another shape: the picture is scaled with the same factor in both directions and centred, the rest stays black. Off: the picture fills the whole window. Graphics card (RTG) pictures always keep their aspect ratio.
 ;
 MSG_HINT_DISPLAY_VSYNC
 Das Zeichnen mit der Bildwiederholung synchronisieren, um Tearing zu vermeiden.
@@ -1026,8 +1026,8 @@ Speichert die aktuellen Einstellungen unter einem neuen Dateinamen.
 ; Save the current settings under a new file name.
 ;
 MSG_HINT_CONFIG_STATE_LOAD
-Laedt einen gespeicherten Emulationszustand (Savestate).
-; Load a saved emulation state (savestate).
+Laedt einen gespeicherten Emulationszustand (Savestate). Ist die Emulation gestoppt, startet sie mit diesem Zustand.
+; Load a saved emulation state (savestate). When the emulation is stopped, it starts with this state.
 ;
 MSG_HINT_CONFIG_STATE_SAVE
 Speichert den Zustand der laufenden Emulation in einer Datei.
@@ -2020,4 +2020,84 @@ Mittlere Maustaste gibt den Mauszeiger frei
 MSG_SET_504
 Im Fenster auf der Workbench gibt die mittlere Maustaste den Mauszeiger an die Workbench zurueck und macht das E-UAE-Fenster inaktiv. Zum Weitermachen ins Fenster klicken. Der Amiga bekommt dann keine mittlere Taste; im Vollbild bekommt er sie immer.
 ; In a window on the Workbench, the middle mouse button gives the pointer back to the Workbench and makes the E-UAE window inactive. Click into the window to continue. The Amiga then gets no middle button; in full screen it always does.
+;
+MSG_SET_505
+Speicherzugriff:
+; Memory access:
+;
+MSG_SET_506
+Indirekt (sicher)
+; Indirect (safe)
+;
+MSG_SET_507
+Direkt (schnell)
+; Direct (fast)
+;
+MSG_SET_508
+Direkt, Kickstart indirekt
+; Direct, Kickstart indirect
+;
+MSG_SET_509
+Indirekt bis Picasso96
+; Indirect until Picasso96
+;
+MSG_SET_510
+Uebersetzten Code optimieren
+; Optimize compiled code
+;
+MSG_SET_511
+Wie der uebersetzte Code auf den Amiga-Speicher zugreift. Indirekt: jeder Zugriff laeuft ueber die Speicher-Routinen (sicher, langsamer). Direkt: normales RAM wird direkt angesprochen; Zugriffe auf Chip-Register und anderen Spezialspeicher werden erkannt und laufen dann ueber die Routinen (schneller). Kickstart indirekt: direkt, ausser fuer Code im Kickstart-ROM. Bis Picasso96: indirekt, bis ein Picasso96-Bildschirm geoeffnet wurde, danach direkt.
+; How translated code accesses Amiga memory. Indirect: every access goes through the memory handlers (safe, slower). Direct: plain RAM is accessed directly; accesses to chip registers and other special memory are detected and then use the handlers (faster). Kickstart indirect: direct, except for code in the Kickstart ROM. Until Picasso96: indirect until a Picasso96 screen has been opened, then direct.
+;
+MSG_SET_512
+Entfernt uebersetzte Befehle, deren Ergebnis nie benutzt wird. Schneller; nur zum Eingrenzen von JIT-Problemen ausschalten.
+; Remove translated instructions whose results are never used. Faster; switch off only to track down JIT problems.
+;
+MSG_SET_513
+Uebersetzte Bloecke verketten
+; Chain translated blocks
+;
+MSG_SET_514
+Ueber bedingte Spruenge uebersetzen
+; Translate across branches
+;
+MSG_SET_515
+68k-Register in PowerPC-Registern halten
+; Keep 68k registers in PowerPC registers
+;
+MSG_SET_516
+FPU-Befehle uebersetzen
+; Translate FPU instructions
+;
+MSG_SET_517
+Uebersetzte Bloecke springen direkt in den naechsten Block, statt nach jedem Block in die Hauptschleife zurueckzukehren. Viel schneller; nur zum Eingrenzen von JIT-Problemen ausschalten.
+; Translated blocks jump directly into the next block instead of returning to the main loop after every block. Much faster; switch off only to track down JIT problems.
+;
+MSG_SET_518
+Ein uebersetzter Block geht ueber bedingte Spruenge (Bcc, DBcc, FBcc) auf dem Weg weiter, den das Programm genommen hat; der andere Weg verlaesst dort den Block. Laengere Bloecke, schneller.
+; A translated block continues over conditional branches (Bcc, DBcc, FBcc) on the path the program took; the other path leaves the block there. Longer blocks, faster.
+;
+MSG_SET_519
+D0-D3, A0-A2 und A5-A7 bleiben in PowerPC-Registern, solange uebersetzte Bloecke aufeinander folgen. Braucht die Block-Verkettung. Schneller.
+; D0-D3, A0-A2 and A5-A7 stay in PowerPC registers while translated blocks run one after the other. Needs block chaining. Faster.
+;
+MSG_SET_520
+Uebersetzt die FPU-Befehle (68881/68882, 68040, 68060). Nur mit klassischer PowerPC-FPU (nicht auf dem A1222); sonst laufen sie immer im Interpreter.
+; Translate the FPU instructions (68881/68882, 68040, 68060). Only with a classic PowerPC FPU (not on the A1222); otherwise they always run in the interpreter.
+;
+MSG_SET_521
+Screenshots:
+; Screenshots:
+;
+MSG_SET_522
+Ordner fuer Screenshots (Tastenkuerzel Strg+Alt+P). Wird angelegt, wenn er noch nicht existiert.
+; Folder for screenshots (hotkey Ctrl+Alt+P). Created when it does not exist yet.
+;
+MSG_SET_523
+Magic Mouse: Amiga-Zeiger folgt dem Workbench-Zeiger
+; Magic Mouse: Amiga pointer follows the host pointer
+;
+MSG_SET_524
+Der Amiga-Mauszeiger folgt dem Workbench-Zeiger, ohne die Maus einzufangen: der Zeiger kann das Fenster jederzeit verlassen. Wirkt im Fenster mit einem Bildschirm der Grafikkarte (RTG) und dem Hardware-Mauszeiger; auf Chipsatz-Bildschirmen und im Vollbild arbeitet die Maus wie bisher.
+; The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before.
 ;

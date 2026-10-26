@@ -273,17 +273,18 @@ if [ -n "$DO_DIST" ]; then
     [ -f "$SRC/stage/uae" ] || die "$SRC/stage/uae fehlt – zuerst Option 2 ausführen."
 
     rm -rf "$DIST" 2>/dev/null || sudo rm -rf "$DIST"
-    mkdir -p "$DIST/docs" "$DIST/configs"
+    mkdir -p "$DIST/docs" "$DIST/configs" "$DIST/Roms" "$DIST/Floppies" \
+             "$DIST/HardFiles" "$DIST/Isos" "$DIST/SaveStates" "$DIST/Screenshots"
     if [ -f "$SRC/stage/uae.stripped" ]; then
-        cp "$SRC/stage/uae.stripped" "$DIST/uae"
+        cp "$SRC/stage/uae.stripped" "$DIST/E-UAE"
     else
-        cp "$SRC/stage/uae" "$DIST/uae"
+        cp "$SRC/stage/uae" "$DIST/E-UAE"
     fi
     for t in readdisk make_hdf; do
         [ -f "$SRC/stage/$t" ] && cp "$SRC/stage/$t" "$DIST/$t"
     done
     cp "$SRC"/docs/*.txt "$DIST/docs/" 2>/dev/null || true
-    for f in README README_original LIESMICH.txt COPYING CHANGES_original; do
+    for f in E-UAE.readme README README_original LIESMICH.txt COPYING CHANGES_original; do
         [ -f "$SRC/$f" ] && cp "$SRC/$f" "$DIST/"
     done
     # Locale-Kataloge (PROGDIR:Catalogs/<Sprache>/E-UAE.catalog)
@@ -298,5 +299,5 @@ if [ -n "$DO_DIST" ]; then
     [ -d "$SRC/package" ] && cp -a "$SRC"/package/. "$DIST/" 2>/dev/null || true
 
     ok "Distributions-Ordner erstellt: $DIST"
-    info "Kickstart-ROM und ADFs/HDFs selbst dazulegen; Start: 'uae' (ReAction-Konfigurations-GUI)."
+    info "Kickstart-ROM und ADFs/HDFs selbst dazulegen; Start: 'E-UAE' (ReAction-Konfigurations-GUI)."
 fi

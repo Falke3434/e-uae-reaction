@@ -18,7 +18,9 @@ enum {
     GID_CHIPSET, GID_NTSC, GID_COLLISION, GID_IMMBLITS, GID_BLITCYCLE,
     GID_CHIP, GID_SLOW, GID_FAST, GID_Z3, GID_GFX,
     GID_JITCACHE, GID_JITHARD, GID_JITCONST,
-    GID_MODEL, GID_AKIKO
+    GID_MODEL, GID_AKIKO,
+    GID_JITTRUST, GID_JITOPTIM,         /* v18 */
+    GID_JITCHAIN, GID_JITCOND, GID_JITFIXREGS, GID_JITFPU   /* v18: TODO 7.1, 7.5, 7.4, 7.3 */
 };
 
 /* ---- Auswahllisten ---------------------------------------------------- */
@@ -97,6 +99,14 @@ static const char *const jit_names[] = { "Off", "1 MB", "2 MB", "4 MB", "8 MB", 
 static const LONG jit_values[] = { 0, 1024, 2048, 4096, 8192, 16384 };
 RA_CHOICE (c_jit, jit_names, jit_values);
 
+/* v18: Speicherzugriff des JIT (comp_trustbyte/word/long, Werte wie
+ * compmode[] in cfgfile.c: 0 direct, 1 indirect, 2 indirectKS, 3 afterPic).
+ * Die GUI stellt alle drei Breiten gemeinsam ein. */
+static const char *const jittrust_names[] = { "Indirect (safe)", "Direct (fast)",
+					      "Direct, Kickstart indirect", "Indirect until Picasso96", NULL };
+static const LONG jittrust_values[] = { 1, 0, 2, 3 };
+RA_CHOICE (c_jittrust, jittrust_names, jittrust_values);
+
 /* Amiga-Modelle: stellen CPU, Chipsatz und Speicher passend ein.
  * (Kickstart-ROM und Laufwerke bleiben unveraendert - die waehlt man auf "Media";
  * v17: das CD32-Modell schaltet zusaetzlich den Akiko-Chip mit CD-Laufwerk ein.) */
@@ -127,7 +137,7 @@ static const struct ra_model models[] = {
 
 static struct ra_choice *const all_choices[] = {
     &c_cpu, &c_speed, &c_chipset, &c_coll, &c_chip, &c_slow, &c_fast, &c_z3, &c_gfx,
-    &c_jit, &c_model
+    &c_jit, &c_jittrust, &c_model
 };
 #define NUM_CHOICES (int)(sizeof all_choices / sizeof all_choices[0])
 
@@ -138,7 +148,8 @@ static Object *g_chipset, *g_ntsc, *g_coll, *g_imm, *g_blitcycle, *g_akiko;
 static Object *g_chip, *g_slow, *g_fast, *g_z3, *g_gfx;
 static Object *g_model;
 #ifdef JIT
-static Object *g_jitcache, *g_jithard, *g_jitconst;
+static Object *g_jitcache, *g_jithard, *g_jitconst, *g_jittrust, *g_jitoptim;
+static Object *g_jitchain, *g_jitcond, *g_jitfixregs, *g_jitfpu;
 #endif
 
 static Object *create (void)
@@ -192,8 +203,14 @@ static Object *create (void)
 	    LAYOUT_AddChild, VLayoutObject,
 		LAYOUT_BevelStyle, BVS_GROUP, LAYOUT_Label, ra_tr ("JIT compiler"), LAYOUT_SpaceOuter, TRUE,
 		LAYOUT_AddChild, g_jitcache = ra_choice_gadget (GID_JITCACHE, &c_jit), CHILD_MinWidth, ra_names_width (c_jit.names), CHILD_Label, ra_label ("Cache:"),
+		LAYOUT_AddChild, g_jittrust = ra_choice_gadget (GID_JITTRUST, &c_jittrust), CHILD_MinWidth, ra_names_width (c_jittrust.names), CHILD_Label, ra_label ("Memory access:"),
 		LAYOUT_AddChild, g_jithard  = ra_checkbox (GID_JITHARD,  "Hard cache flush"),
 		LAYOUT_AddChild, g_jitconst = ra_checkbox (GID_JITCONST, "Constant jumps"),
+		LAYOUT_AddChild, g_jitoptim = ra_checkbox (GID_JITOPTIM, "Optimize compiled code"),
+		LAYOUT_AddChild, g_jitchain = ra_checkbox (GID_JITCHAIN, "Chain translated blocks"),
+		LAYOUT_AddChild, g_jitcond  = ra_checkbox (GID_JITCOND,  "Translate across branches"),
+		LAYOUT_AddChild, g_jitfixregs = ra_checkbox (GID_JITFIXREGS, "Keep 68k registers in PowerPC registers"),
+		LAYOUT_AddChild, g_jitfpu   = ra_checkbox (GID_JITFPU,   "Translate FPU instructions"),
 	    LayoutEnd,
 	    CHILD_WeightedHeight, 0,
 #endif
@@ -263,6 +280,13 @@ static void read_prefs (void)
     changed_prefs.cachesize        = ra_choice_value (g_jitcache, &c_jit);
     changed_prefs.comp_hardflush   = is_checked (g_jithard);
     changed_prefs.comp_constjump   = is_checked (g_jitconst);
+    changed_prefs.compoptim        = is_checked (g_jitoptim);
+    changed_prefs.comp_chain       = is_checked (g_jitchain);
+    changed_prefs.comp_condjump    = is_checked (g_jitcond);
+    changed_prefs.comp_fixregs     = is_checked (g_jitfixregs);
+    changed_prefs.comp_fpu         = is_checked (g_jitfpu);
+    /* comp_trust* nur bei Aenderung der Auswahl setzen (handle), damit
+     * unterschiedliche Werte aus einer Konfigurationsdatei erhalten bleiben */
 #endif
 }
 
@@ -317,6 +341,12 @@ static void write_prefs (void)
     ra_choice_set (g_jitcache, &c_jit, changed_prefs.cachesize, 0);
     RA_SET (g_jithard,  GA_Selected,    changed_prefs.comp_hardflush ? TRUE : FALSE);
     RA_SET (g_jitconst, GA_Selected,    changed_prefs.comp_constjump ? TRUE : FALSE);
+    RA_SET (g_jitoptim, GA_Selected,    changed_prefs.compoptim ? TRUE : FALSE);
+    RA_SET (g_jitchain, GA_Selected,    changed_prefs.comp_chain ? TRUE : FALSE);
+    RA_SET (g_jitcond,  GA_Selected,    changed_prefs.comp_condjump ? TRUE : FALSE);
+    RA_SET (g_jitfixregs, GA_Selected,  changed_prefs.comp_fixregs ? TRUE : FALSE);
+    RA_SET (g_jitfpu,   GA_Selected,    changed_prefs.comp_fpu ? TRUE : FALSE);
+    ra_choice_set (g_jittrust, &c_jittrust, changed_prefs.comptrustlong, 0);
 #endif
 }
 
@@ -363,6 +393,14 @@ static void apply_rules (void)
     ra_set_disabled (g_jitcache, !stopped || !cpu32);
     ra_set_disabled (g_jithard,  !stopped || !cpu32);
     ra_set_disabled (g_jitconst, !stopped || !cpu32);
+    ra_set_disabled (g_jittrust, !stopped || !cpu32);
+    ra_set_disabled (g_jitoptim, !stopped || !cpu32);
+    ra_set_disabled (g_jitchain, !stopped || !cpu32);
+    ra_set_disabled (g_jitcond,  !stopped || !cpu32);
+    /* v18: the 68k registers stay in PowerPC registers only while the
+     * translated blocks are chained; FPU instructions need an FPU */
+    ra_set_disabled (g_jitfixregs, !stopped || !cpu32 || !changed_prefs.comp_chain);
+    ra_set_disabled (g_jitfpu,   !stopped || !cpu32 || changed_prefs.cpu_level < 3);
 #endif
 
     /* JIT und "Compatible" / "Cycle-exact" schliessen sich aus (wie bei
@@ -413,6 +451,13 @@ static int handle (ULONG gid, ULONG code)
 	write_prefs ();                 /* Gadgets aus den neuen Prefs setzen */
 	ra_write_page (PAGE_ID_HARDDISK);
 	ra_write_page (PAGE_ID_MEDIA);
+#ifdef JIT
+    } else if (gid == GID_JITTRUST) {
+	LONG t = ra_choice_value (g_jittrust, &c_jittrust);
+	changed_prefs.comptrustbyte = t;
+	changed_prefs.comptrustword = t;
+	changed_prefs.comptrustlong = t;
+#endif
     } else if (gid == GID_AKIKO) {
 	ra_choice_set (g_model, &c_model, model_from_prefs (), 0);
 	ra_write_page (PAGE_ID_HARDDISK);   /* CD drive on Akiko */
@@ -475,8 +520,14 @@ static const struct ra_hint hints[] = {
     { GID_Z3, 1, "Zorro III Fast RAM. Needs a 68020 or higher with 32 bit addressing." },
     { GID_GFX, 1, "Memory of the emulated Picasso96 graphics card. Needs a 68020 or higher with 32 bit addressing." },
     { GID_JITCACHE, 1, "Size of the JIT translation cache. Off disables the JIT compiler. Needs a 68020 or higher with 32 bit addressing." },
-    { GID_JITHARD, 1, "When the Amiga flushes its CPU cache, throw away all translated code (safe, slower). Off: keep the code and translate again only blocks whose memory has changed (checksum test)." },
-    { GID_JITCONST, 1, "Optimization for jumps with fixed targets. Can be faster, but may reduce compatibility." },
+    { GID_JITHARD, 1, "When the Amiga flushes its CPU cache, throw away all translated code (only for programs that change their own code without telling the CPU; slower, short stalls). Off (default, as in WinUAE): keep the code and translate again only blocks whose memory has changed (checksum test)." },
+    { GID_JITCONST, 1, "A translated block continues at the target of jumps with a fixed target (BRA, BSR, JMP and JSR to an absolute address) instead of ending there. Longer blocks, faster." },
+    { GID_JITTRUST, 1, "How translated code accesses Amiga memory. Indirect: every access goes through the memory handlers (safe, slower). Direct: plain RAM is accessed directly; accesses to chip registers and other special memory are detected and then use the handlers (faster). Kickstart indirect: direct, except for code in the Kickstart ROM. Until Picasso96: indirect until a Picasso96 screen has been opened, then direct." },
+    { GID_JITOPTIM, 1, "Remove translated instructions whose results are never used. Faster; switch off only to track down JIT problems." },
+    { GID_JITCHAIN, 1, "Translated blocks jump directly into the next block instead of returning to the main loop after every block. Much faster; switch off only to track down JIT problems." },
+    { GID_JITCOND, 1, "A translated block continues over conditional branches (Bcc, DBcc, FBcc) on the path the program took; the other path leaves the block there. Longer blocks, faster." },
+    { GID_JITFIXREGS, 1, "D0-D3, A0-A2 and A5-A7 stay in PowerPC registers while translated blocks run one after the other. Needs block chaining. Faster." },
+    { GID_JITFPU, 1, "Translate the FPU instructions (68881/68882, 68040, 68060). Only with a classic PowerPC FPU (not on the A1222); otherwise they always run in the interpreter." },
     { 0, 0, NULL }
 };
 

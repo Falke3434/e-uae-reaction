@@ -35,6 +35,9 @@
 ;*** indAcp  - Ax indirect with complex displacement, eg: ([bd, An] Rn, od)
 ;*** indPCcp - PC indirect with complex displacement, eg: ([bd, PC] Rn, od)
 
+;*** v18: every implemented opcode is compared with the interpreter by the
+;*** JIT test harness (tools/jittest, see its README).
+
 #Addressing
 ;address   modus  register
 ;none should be the first int the list
@@ -757,24 +760,24 @@ BFTST2MEM     1   1   0   1110 1000 11DD Dddd   0 0     none     indA,indAd16,in
 ;---------------------------------------------------------------------
 ;*** Basic FPU instructions
 ;cpBcc
-FBCOND        0   0   2   1111 0010 10SS Ssss   1 0     FCC_eq,FCC_ogt,FCC_oge,FCC_olt,FCC_ole,FCC_ogl,FCC_or,FCC_un,FCC_ueq,FCC_ugt,FCC_uge,FCC_ult,FCC_ule,FCC_ne,FCC_t,FCC_sf,FCC_seq,FCC_gt,FCC_ge,FCC_lt,FCC_le,FCC_gl,FCC_gle,FCC_ngle,FCC_ngl,FCC_nle,FCC_nlt,FCC_nge,FCC_ngt,FCC_sne,FCC_st    none
-FBCOND        0   0   4   1111 0010 11SS Ssss   1 0     FCC_f,FCC_eq,FCC_ogt,FCC_oge,FCC_olt,FCC_ole,FCC_ogl,FCC_or,FCC_un,FCC_ueq,FCC_ugt,FCC_uge,FCC_ult,FCC_ule,FCC_ne,FCC_t,FCC_sf,FCC_seq,FCC_gt,FCC_ge,FCC_lt,FCC_le,FCC_gl,FCC_gle,FCC_ngle,FCC_ngl,FCC_nle,FCC_nlt,FCC_nge,FCC_ngt,FCC_sne,FCC_st    none
+FBCOND        1   0   2   1111 0010 10SS Ssss   1 0     FCC_eq,FCC_ogt,FCC_oge,FCC_olt,FCC_ole,FCC_ogl,FCC_or,FCC_un,FCC_ueq,FCC_ugt,FCC_uge,FCC_ult,FCC_ule,FCC_ne,FCC_t,FCC_sf,FCC_seq,FCC_gt,FCC_ge,FCC_lt,FCC_le,FCC_gl,FCC_gle,FCC_ngle,FCC_ngl,FCC_nle,FCC_nlt,FCC_nge,FCC_ngt,FCC_sne,FCC_st    none
+FBCOND        1   0   4   1111 0010 11SS Ssss   1 0     FCC_f,FCC_eq,FCC_ogt,FCC_oge,FCC_olt,FCC_ole,FCC_ogl,FCC_or,FCC_un,FCC_ueq,FCC_ugt,FCC_uge,FCC_ult,FCC_ule,FCC_ne,FCC_t,FCC_sf,FCC_seq,FCC_gt,FCC_ge,FCC_lt,FCC_le,FCC_gl,FCC_gle,FCC_ngle,FCC_ngl,FCC_nle,FCC_nlt,FCC_nge,FCC_ngt,FCC_sne,FCC_st    none
 
 ;cpBDcc
 FDBCOND       0   0   4   1111 0010 0100 1ddd   1 0     none    regD
 
 ;cpGEN
-FGENREG       0   1   0   1111 0010 00SS Ssss   0 0     regD,regA    none
-FGENMEM       0   1   0   1111 0010 00SS Ssss   0 0     indA,indAd16,indPCd16,absW,absL,indAcp,indPCcp    none
+FGENREG       1   1   0   1111 0010 00SS Ssss   0 0     regD,regA    none
+FGENMEM       1   1   0   1111 0010 00SS Ssss   0 0     indA,indAd16,indPCd16,absW,absL,indAcp,indPCcp    none
 
 ;cpGEN -(Ax)
-FGENMEMUM     0   1   0   1111 0010 0010 0sss   0 0     regA    none
+FGENMEMUM     1   1   0   1111 0010 0010 0sss   0 0     regA    none
 
 ;cpGEN (Ax)+
-FGENMEMUP     0   1   0   1111 0010 0001 1sss   0 0     regA    none
+FGENMEMUP     1   1   0   1111 0010 0001 1sss   0 0     regA    none
 
 ;cpGEN #x
-FGENIMM       0   1   0   1111 0010 0011 1100   0 0     none    none
+FGENIMM       1   1   0   1111 0010 0011 1100   0 0     none    none
 
 ;cpSAVE
 FSAVEMEM      0   0   0   1111 0011 00DD Dddd   0 0     none    indA,indAd16,indPCd16,absW,absL,indAcp
@@ -793,6 +796,6 @@ FSCCREG       0   1   1   1111 0010 01DD Dddd   0 0     none    regD
 FSCCMEM       0   1   1   1111 0010 01DD Dddd   0 0     none    indA,indAd16,indPCd16,absW,absL,indAcp,indApB,indmAB
 
 ;FNOP
-FNOP          0   1   0   1111 0010 1000 0000   0 0     none    none
+FNOP          1   1   0   1111 0010 1000 0000   0 0     none    none
 
 ;*** EOF

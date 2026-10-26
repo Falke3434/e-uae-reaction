@@ -1,33 +1,40 @@
-
-if exists ram:uae
-delete ram:uae all
-delete ram:uae.lha
+; E-UAE ReAction - build the distribution drawer RAM:E-UAE and RAM:E-UAE.lha
+; (v18: program E-UAE with its own icon from package/E-UAE.info;
+;  config.info and ADF-files.info are no longer included)
+If exists ram:E-UAE
+delete ram:E-UAE all
+delete ram:E-UAE.lha
 endif
 
-makedir ram:uae
-makedir ram:uae/docs
-copy src/uae ram:uae
-strip ram:uae/uae
-copy docs/#? ram:uae/docs >NIL:
-copy README ram:uae
-copy COPYING ram:uae
+makedir ram:E-UAE
+makedir ram:E-UAE/docs
+copy src/uae ram:E-UAE/E-UAE
+strip ram:E-UAE/E-UAE
+copy docs/#? ram:E-UAE/docs >NIL:
+copy README ram:E-UAE
+copy COPYING ram:E-UAE
+copy E-UAE.readme ram:E-UAE
 
-copy envarc:Sys/def_tool.info ram:uae/uae.info
-copy envarc:Sys/def_drawer.info ram:uae.info
-copy envarc:Sys/def_drawer.info ram:uae/docs.info
-copy envarc:Sys/def_drawer.info ram:uae/accelerator.library.info
-copy envarc:Sys/def_drawer.info ram:uae/configs.info
- 
-copy envarc:Sys/def_ascii.info ram:uae/COPYING.info
-copy envarc:Sys/def_ascii.info ram:uae/README.info
+copy envarc:Sys/def_drawer.info ram:E-UAE.info
+copy envarc:Sys/def_drawer.info ram:E-UAE/docs.info
+copy envarc:Sys/def_drawer.info ram:E-UAE/accelerator.library.info
+copy envarc:Sys/def_drawer.info ram:E-UAE/configs.info
 
-copy package ram:uae
+copy envarc:Sys/def_ascii.info ram:E-UAE/COPYING.info
+copy envarc:Sys/def_ascii.info ram:E-UAE/README.info
+copy envarc:Sys/def_ascii.info ram:E-UAE/E-UAE.readme.info
 
-makedir ram:uae/accelerator.library
-copy /os31/os31-test-app/accelerator_wrappers.h ram:uae/accelerator.library/proto_accelerator.h
-copy /os31/os31-test-app/AcceleratorPatch.hunk ram:uae/accelerator.library
-copy /os31/os31-test-app/AcceleratorTest.hunk ram:uae/accelerator.library
-copy /os31/os31-test-app/ReadMe.txt ram:uae/accelerator.library
+; program icon (package/E-UAE.info) and the other files of package/
+copy package/#? ram:E-UAE
 
-lha a -erv ram:uae.lha ram:uae ram:uae.info
+makedir ram:E-UAE/Catalogs
+makedir ram:E-UAE/Catalogs/deutsch
+copy Catalogs/deutsch/E-UAE.catalog ram:E-UAE/Catalogs/deutsch
 
+makedir ram:E-UAE/accelerator.library
+copy /os31/os31-test-app/accelerator_wrappers.h ram:E-UAE/accelerator.library/proto_accelerator.h
+copy /os31/os31-test-app/AcceleratorPatch.hunk ram:E-UAE/accelerator.library
+copy /os31/os31-test-app/AcceleratorTest.hunk ram:E-UAE/accelerator.library
+copy /os31/os31-test-app/ReadMe.txt ram:E-UAE/accelerator.library
+
+lha a -erv ram:E-UAE.lha ram:E-UAE ram:E-UAE.info

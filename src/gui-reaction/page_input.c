@@ -10,7 +10,7 @@
 #define BASE GID_PAGE_BASE (PAGE_ID_INPUT)
 
 enum {
-    GID_PORT0 = BASE + 1, GID_PORT1, GID_KBDLANG, GID_MOUSESPEED, GID_HIDECURSOR, GID_MIDDLE
+    GID_PORT0 = BASE + 1, GID_PORT1, GID_KBDLANG, GID_MOUSESPEED, GID_HIDECURSOR, GID_MIDDLE, GID_MAGIC
 };
 
 static const char *const port_names[] = {
@@ -35,7 +35,7 @@ RA_CHOICE (c_lang, lang_names, lang_values);
 static struct ra_choice *const all_choices[] = { &c_port0, &c_port1, &c_lang };
 #define NUM_CHOICES (int)(sizeof all_choices / sizeof all_choices[0])
 
-static Object *g_p0, *g_p1, *g_lang, *g_speed, *g_middle;
+static Object *g_p0, *g_p1, *g_lang, *g_speed, *g_middle, *g_magic;
 
 static Object *create (void)
 {
@@ -52,6 +52,7 @@ static Object *create (void)
 	    LAYOUT_AddChild, g_lang  = ra_choice_gadget (GID_KBDLANG, &c_lang), CHILD_MinWidth, ra_names_width (c_lang.names),   CHILD_Label, ra_label ("Keyboard layout:"),
 	    LAYOUT_AddChild, g_speed = ra_integer (GID_MOUSESPEED, 1, 1000, 100), CHILD_Label, ra_label ("Mouse speed (%):"),
 	    LAYOUT_AddChild, g_middle = ra_checkbox (GID_MIDDLE, "Middle mouse button releases the pointer"),
+	    LAYOUT_AddChild, g_magic = ra_checkbox (GID_MAGIC, "Magic Mouse: Amiga pointer follows the host pointer"),
 	LayoutEnd,
 	CHILD_WeightedHeight, 0,
 	LAYOUT_AddChild, SpaceObject, SpaceEnd,
@@ -65,6 +66,7 @@ static void read_prefs (void)
     changed_prefs.keyboard_lang = (KbdLang) ra_choice_value (g_lang, &c_lang);
     changed_prefs.input_mouse_speed = ra_get_num (g_speed, INTEGER_Number);
     changed_prefs.amiga_middle_release = ra_get_num (g_middle, GA_Selected) ? 1 : 0;
+    changed_prefs.amiga_magic_mouse = ra_get_num (g_magic, GA_Selected) ? 1 : 0;	/* v18 */
 }
 
 static void write_prefs (void)
@@ -74,6 +76,7 @@ static void write_prefs (void)
     ra_choice_set (g_lang, &c_lang, changed_prefs.keyboard_lang, 0);
     RA_SET (g_speed, INTEGER_Number, changed_prefs.input_mouse_speed);
     RA_SET (g_middle, GA_Selected, changed_prefs.amiga_middle_release ? TRUE : FALSE);
+    RA_SET (g_magic, GA_Selected, changed_prefs.amiga_magic_mouse ? TRUE : FALSE);
 }
 
 static int handle (ULONG gid, ULONG code)
@@ -96,6 +99,7 @@ static const struct ra_hint hints[] = {
     { GID_KBDLANG, 1, "Keyboard layout of the emulated Amiga keyboard." },
     { GID_MOUSESPEED, 1, "Mouse sensitivity in percent." },
     { GID_MIDDLE, 1, "In a window on the Workbench, the middle mouse button gives the pointer back to the Workbench and makes the E-UAE window inactive. Click into the window to continue. The Amiga then gets no middle button; in full screen it always does." },
+    { GID_MAGIC, 1, "The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before." },
     { 0, 0, NULL }
 };
 

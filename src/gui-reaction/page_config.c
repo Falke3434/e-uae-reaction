@@ -3,7 +3,8 @@
  *
  *   - Konfigurationsdatei laden / speichern / speichern unter
  *   - Beschreibung der Konfiguration
- *   - Savestates laden / speichern (waehrend die Emulation laeuft)
+ *   - Savestates laden / speichern (speichern waehrend die Emulation laeuft;
+ *     v18: laden auch im gestoppten Zustand - startet mit dem Savestate)
  *   - Allgemeine Optionen (GUI beim Start, bsdsocket.library, Uhr synchronisieren)
  */
 
@@ -157,7 +158,7 @@ static void state (int st)
     BOOL running = st == UAE_STATE_RUNNING || st == UAE_STATE_PAUSED;
 
 #ifdef SAVESTATE
-    ra_set_disabled (g_sload, !running);
+    ra_set_disabled (g_sload, FALSE);	/* v18: stopped -> start with the state */
     ra_set_disabled (g_ssave, !running);
 #else
     ra_set_disabled (g_sload, TRUE);
@@ -172,7 +173,7 @@ static const struct ra_hint hints[] = {
     { GID_LOAD, 1, "Load a configuration file and apply it." },
     { GID_SAVE, 1, "Save the current settings to the current configuration file." },
     { GID_SAVEAS, 1, "Save the current settings under a new file name." },
-    { GID_STATE_LOAD, 1, "Load a saved emulation state (savestate)." },
+    { GID_STATE_LOAD, 1, "Load a saved emulation state (savestate). When the emulation is stopped, it starts with this state." },
     { GID_STATE_SAVE, 1, "Save the state of the running emulation to a file." },
     { GID_STARTGUI, 1, "Open this settings window every time E-UAE starts." },
     { GID_BSDSOCKET, 1, "Provide bsdsocket.library so emulated Amiga programs can use the host network." },

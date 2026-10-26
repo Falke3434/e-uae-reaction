@@ -177,9 +177,25 @@ static void expamem_init_clear (void)
 {
     memset (expamem, 0xff, sizeof expamem);
 }
+/*
+ * v18: after the last board the autoconfig area does not exist any more
+ * (as in WinUAE, expamem_init_clear_zero()): with a 68000/68010 the space
+ * at $E80000 becomes unmapped memory, so a scan finds no further board.
+ * Before, every empty slot read as a Zorro II board ($FF), and the
+ * boot code of the Action Replay 3 "configured" one empty slot after the
+ * other ("Card 8 (ZorroII) done" again and again, "expamem_map_clear() got
+ * called").
+ */
+static void expamem_init_last (void)
+{
+    expamem_init_clear ();
+    if (currprefs.cpu_level < 2)
+	map_banks (&dummy_bank, 0xE8, 1, 0);
+}
+
 static void expamem_init_clear2 (void)
 {
-    expamem_init_clear();
+    expamem_init_last ();
     ecard = MAX_EXPANSION_BOARDS - 1;
 }
 
@@ -201,8 +217,8 @@ static uae_u32 REGPARAM2 expamem_lget (uaecptr addr)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_READ;
 #endif
-    write_log ("warning: READ.L from address $%lx \n", addr);
-    return 0xfffffffful;
+    /* v18: the autoconfig data, as two words (WinUAE); was always $FFFFFFFF */
+    return (expamem_wget (addr) << 16) | expamem_wget (addr + 2);
 }
 
 static uae_u32 REGPARAM2 expamem_wget (uaecptr addr)
@@ -210,8 +226,10 @@ static uae_u32 REGPARAM2 expamem_wget (uaecptr addr)
 #ifdef JIT
     special_mem |= SPECIAL_MEM_READ;
 #endif
-    write_log ("warning: READ.W from address $%lx \n", addr);
-    return 0xffff;
+    /* v18: the autoconfig data, as two bytes (WinUAE). It was always $FFFF,
+     * which looks like a board in every slot to code that reads words
+     * (the Action Replay 3 ROM). */
+    return (expamem_bget (addr) << 8) | expamem_bget (addr + 1);
 }
 
 static uae_u32 REGPARAM2 expamem_bget (uaecptr addr)
@@ -1256,9 +1274,12 @@ void expamem_reset (void)
     }
 #endif
     while (cardno < MAX_EXPANSION_BOARDS) {
-	card_init[cardno] = expamem_init_clear;
+	card_init[cardno] = expamem_init_last;	/* v18: no board -> area gone */
 	card_map[cardno++] = expamem_map_clear;
     }
+
+    /* v18: expamem_init_last() of the previous boot may have unmapped it */
+    map_banks (&expamem_bank, 0xE8, 1, 0);
 
     (*card_init[0]) ();
 }

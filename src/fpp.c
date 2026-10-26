@@ -898,6 +898,218 @@ static void fround (int reg)
     regs.fp[reg] = (float)regs.fp[reg];
 }
 
+/* The arithmetic of the general FPU instructions (FMOVE, FADD, ... to an
+ * FPU register) with the source operand already fetched. Returns 0 for an
+ * illegal operation. v18: moved out of fpp_opp() for the JIT (TODO 7.3),
+ * which fetches the source itself and calls fpp_jit_arith(). */
+static int fpp_arith (struct regstruct *regs, uae_u16 extra, fptype src)
+{
+	int reg = (extra >> 7) & 7;
+
+	switch (extra & 0x7f) {
+	case 0x00: /* FMOVE */
+	case 0x40: /* Explicit rounding. This is just a quick fix. */
+	case 0x44: /* Same for all other cases that have three choices */
+	    regs->fp[reg] = src;        /* Brian King was here. */
+	    /*<ea> to register needs FPSR updated. See Motorola 68K Manual. */
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x01: /* FINT */
+	    /* need to take the current rounding mode into account */
+	    regs->fp[reg] = fint_mode (get_rounding_mode (regs), src);
+	    break;
+	case 0x02: /* FSINH */
+	    regs->fp[reg] = sinh (src);
+	    break;
+	case 0x03: /* FINTRZ */
+	    if (src >= 0.0)
+		regs->fp[reg] = floor (src);
+	    else
+		regs->fp[reg] = ceil (src);
+	    break;
+	case 0x04: /* FSQRT */
+	case 0x41:
+	case 0x45:
+	    regs->fp[reg] = sqrt (src);
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x06: /* FLOGNP1 */
+	    regs->fp[reg] = log (src + 1.0);
+	    break;
+	case 0x08: /* FETOXM1 */
+	    regs->fp[reg] = exp (src) - 1.0;
+	    break;
+	case 0x09: /* FTANH */
+	    regs->fp[reg] = tanh (src);
+	    break;
+	case 0x0a: /* FATAN */
+	    regs->fp[reg] = atan (src);
+	    break;
+	case 0x0c: /* FASIN */
+	    regs->fp[reg] = asin (src);
+	    break;
+	case 0x0d: /* FATANH */
+#if 1	/* The BeBox doesn't have atanh, and it isn't in the HPUX libm either */
+	    regs->fp[reg] = 0.5 * log ((1 + src) / (1 - src));
+#else
+	    regs->fp[reg] = atanh (src);
+#endif
+	    break;
+	case 0x0e: /* FSIN */
+	    regs->fp[reg] = sin (src);
+	    break;
+	case 0x0f: /* FTAN */
+	    regs->fp[reg] = tan (src);
+	    break;
+	case 0x10: /* FETOX */
+	    regs->fp[reg] = exp (src);
+	    break;
+	case 0x11: /* FTWOTOX */
+	    regs->fp[reg] = pow (2.0, src);
+	    break;
+	case 0x12: /* FTENTOX */
+	    regs->fp[reg] = pow (10.0, src);
+	    break;
+	case 0x14: /* FLOGN */
+	    regs->fp[reg] = log (src);
+	    break;
+	case 0x15: /* FLOG10 */
+	    regs->fp[reg] = log10 (src);
+	    break;
+	case 0x16: /* FLOG2 */
+	    regs->fp[reg] = log (src) / log (2.0);
+	    break;
+	case 0x18: /* FABS */
+	case 0x58:
+	case 0x5c:
+	    regs->fp[reg] = fabs (src);
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x19: /* FCOSH */
+	    regs->fp[reg] = cosh (src);
+	    break;
+	case 0x1a: /* FNEG */
+	case 0x5a:
+	case 0x5e:
+	    regs->fp[reg] = -src;
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x1c: /* FACOS */
+	    regs->fp[reg] = acos (src);
+	    break;
+	case 0x1d: /* FCOS */
+	    regs->fp[reg] = cos (src);
+	    break;
+	case 0x1e: /* FGETEXP */
+	    {
+	      int expon;
+	      if (src == 0.0)
+		  regs->fp[reg] = src;
+	      else if (isnan (src) || isinf (src))
+		  regs->fp[reg] = src - src;	/* NaN */
+	      else {
+		  frexp (src, &expon);
+		  regs->fp[reg] = (double) (expon - 1);
+	      }
+	    }
+	    break;
+	case 0x1f: /* FGETMAN */
+	    {
+	      int expon;
+	      regs->fp[reg] = frexp (src, &expon) * 2.0;
+	    }
+	    break;
+	case 0x20: /* FDIV */
+	case 0x60:
+	case 0x64:
+	    regs->fp[reg] /= src;
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x21: /* FMOD */
+	    {
+	      fptype divi = regs->fp[reg] / src;
+
+	      if (divi >= 0.0)
+		regs->fp[reg] -= src * floor (divi);
+	      else
+		regs->fp[reg] -= src * ceil (divi);
+	    }
+	    break;
+	case 0x22: /* FADD */
+	case 0x62:
+	case 0x66:
+	    regs->fp[reg] += src;
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x23: /* FMUL */
+	case 0x63:
+	case 0x67:
+	    regs->fp[reg] *= src;
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x24: /* FSGLDIV */
+	    regs->fp[reg] /= src;
+	    break;
+	case 0x25: /* FREM */
+	    regs->fp[reg] -= src * floor ((regs->fp[reg] / src) + 0.5);
+	    break;
+	case 0x26: /* FSCALE */
+	    /* scale by 2^(integer part of src), exact (was exp(log(2)*src)) */
+	    if (isnan (src) || isinf (src) || isnan (regs->fp[reg]))
+		regs->fp[reg] = regs->fp[reg] + src * 0.0;	/* NaN */
+	    else {
+		fptype n = src >= 0.0 ? floor (src) : ceil (src);
+		if (n > 100000.0) n = 100000.0;
+		if (n < -100000.0) n = -100000.0;
+		regs->fp[reg] = ldexp (regs->fp[reg], (int) n);
+	    }
+	    break;
+	case 0x27: /* FSGLMUL */
+	    regs->fp[reg] *= src;
+	    break;
+	case 0x28: /* FSUB */
+	case 0x68:
+	case 0x6c:
+	    regs->fp[reg] -= src;
+	    if ((extra & 0x44) == 0x40)
+		fround (reg);
+	    break;
+	case 0x30: /* FSINCOS */
+	case 0x31:
+	case 0x32:
+	case 0x33:
+	case 0x34:
+	case 0x35:
+	case 0x36:
+	case 0x37:
+	    regs->fp[extra & 7] = cos (src);
+	    regs->fp[reg] = sin (src);
+	    break;
+	case 0x38: /* FCMP */
+	    {
+	      fptype tmp = regs->fp[reg] == src ? 0.0 : regs->fp[reg] - src;
+	      regs->fpsr = 0;
+	      MAKE_FPSR (regs, tmp);
+	    }
+	    return 1;
+	case 0x3a: /* FTST */
+	    regs->fpsr = 0;
+	    MAKE_FPSR (regs, src);
+	    return 1;
+	default:
+	    return 0;
+	}
+	MAKE_FPSR (regs, regs->fp[reg]);
+	return 1;
+}
+
 void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 {
     int reg;
@@ -1215,219 +1427,55 @@ void fpp_opp (uae_u32 opcode, struct regstruct *regs, uae_u16 extra)
 	    MAKE_FPSR (regs, regs->fp[reg]); /* see Motorola 68k Manual */
 	    return;
 	}
-	if (get_fp_value (opcode, extra, &src) == 0) {
+	if (get_fp_value (opcode, extra, &src) == 0
+	    || !fpp_arith (regs, extra, src)) {
 	    m68k_setpc (regs, m68k_getpc (regs) - 4);
 	    op_illg (opcode, regs);
-	    return;
 	}
-	switch (extra & 0x7f) {
-	case 0x00: /* FMOVE */
-	case 0x40: /* Explicit rounding. This is just a quick fix. */
-	case 0x44: /* Same for all other cases that have three choices */
-	    regs->fp[reg] = src;        /* Brian King was here. */
-	    /*<ea> to register needs FPSR updated. See Motorola 68K Manual. */
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x01: /* FINT */
-	    /* need to take the current rounding mode into account */
-	    regs->fp[reg] = fint_mode (get_rounding_mode (regs), src);
-	    break;
-	case 0x02: /* FSINH */
-	    regs->fp[reg] = sinh (src);
-	    break;
-	case 0x03: /* FINTRZ */
-	    if (src >= 0.0)
-		regs->fp[reg] = floor (src);
-	    else
-		regs->fp[reg] = ceil (src);
-	    break;
-	case 0x04: /* FSQRT */
-	case 0x41:
-	case 0x45:
-	    regs->fp[reg] = sqrt (src);
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x06: /* FLOGNP1 */
-	    regs->fp[reg] = log (src + 1.0);
-	    break;
-	case 0x08: /* FETOXM1 */
-	    regs->fp[reg] = exp (src) - 1.0;
-	    break;
-	case 0x09: /* FTANH */
-	    regs->fp[reg] = tanh (src);
-	    break;
-	case 0x0a: /* FATAN */
-	    regs->fp[reg] = atan (src);
-	    break;
-	case 0x0c: /* FASIN */
-	    regs->fp[reg] = asin (src);
-	    break;
-	case 0x0d: /* FATANH */
-#if 1	/* The BeBox doesn't have atanh, and it isn't in the HPUX libm either */
-	    regs->fp[reg] = 0.5 * log ((1 + src) / (1 - src));
-#else
-	    regs->fp[reg] = atanh (src);
-#endif
-	    break;
-	case 0x0e: /* FSIN */
-	    regs->fp[reg] = sin (src);
-	    break;
-	case 0x0f: /* FTAN */
-	    regs->fp[reg] = tan (src);
-	    break;
-	case 0x10: /* FETOX */
-	    regs->fp[reg] = exp (src);
-	    break;
-	case 0x11: /* FTWOTOX */
-	    regs->fp[reg] = pow (2.0, src);
-	    break;
-	case 0x12: /* FTENTOX */
-	    regs->fp[reg] = pow (10.0, src);
-	    break;
-	case 0x14: /* FLOGN */
-	    regs->fp[reg] = log (src);
-	    break;
-	case 0x15: /* FLOG10 */
-	    regs->fp[reg] = log10 (src);
-	    break;
-	case 0x16: /* FLOG2 */
-	    regs->fp[reg] = log (src) / log (2.0);
-	    break;
-	case 0x18: /* FABS */
-	case 0x58:
-	case 0x5c:
-	    regs->fp[reg] = fabs (src);
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x19: /* FCOSH */
-	    regs->fp[reg] = cosh (src);
-	    break;
-	case 0x1a: /* FNEG */
-	case 0x5a:
-	case 0x5e:
-	    regs->fp[reg] = -src;
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x1c: /* FACOS */
-	    regs->fp[reg] = acos (src);
-	    break;
-	case 0x1d: /* FCOS */
-	    regs->fp[reg] = cos (src);
-	    break;
-	case 0x1e: /* FGETEXP */
-	    {
-	      int expon;
-	      if (src == 0.0)
-		  regs->fp[reg] = src;
-	      else if (isnan (src) || isinf (src))
-		  regs->fp[reg] = src - src;	/* NaN */
-	      else {
-		  frexp (src, &expon);
-		  regs->fp[reg] = (double) (expon - 1);
-	      }
-	    }
-	    break;
-	case 0x1f: /* FGETMAN */
-	    {
-	      int expon;
-	      regs->fp[reg] = frexp (src, &expon) * 2.0;
-	    }
-	    break;
-	case 0x20: /* FDIV */
-	case 0x60:
-	case 0x64:
-	    regs->fp[reg] /= src;
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x21: /* FMOD */
-	    {
-	      fptype divi = regs->fp[reg] / src;
-
-	      if (divi >= 0.0)
-		regs->fp[reg] -= src * floor (divi);
-	      else
-		regs->fp[reg] -= src * ceil (divi);
-	    }
-	    break;
-	case 0x22: /* FADD */
-	case 0x62:
-	case 0x66:
-	    regs->fp[reg] += src;
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x23: /* FMUL */
-	case 0x63:
-	case 0x67:
-	    regs->fp[reg] *= src;
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x24: /* FSGLDIV */
-	    regs->fp[reg] /= src;
-	    break;
-	case 0x25: /* FREM */
-	    regs->fp[reg] -= src * floor ((regs->fp[reg] / src) + 0.5);
-	    break;
-	case 0x26: /* FSCALE */
-	    /* scale by 2^(integer part of src), exact (was exp(log(2)*src)) */
-	    if (isnan (src) || isinf (src) || isnan (regs->fp[reg]))
-		regs->fp[reg] = regs->fp[reg] + src * 0.0;	/* NaN */
-	    else {
-		fptype n = src >= 0.0 ? floor (src) : ceil (src);
-		if (n > 100000.0) n = 100000.0;
-		if (n < -100000.0) n = -100000.0;
-		regs->fp[reg] = ldexp (regs->fp[reg], (int) n);
-	    }
-	    break;
-	case 0x27: /* FSGLMUL */
-	    regs->fp[reg] *= src;
-	    break;
-	case 0x28: /* FSUB */
-	case 0x68:
-	case 0x6c:
-	    regs->fp[reg] -= src;
-	    if ((extra & 0x44) == 0x40)
-		fround (reg);
-	    break;
-	case 0x30: /* FSINCOS */
-	case 0x31:
-	case 0x32:
-	case 0x33:
-	case 0x34:
-	case 0x35:
-	case 0x36:
-	case 0x37:
-	    regs->fp[extra & 7] = cos (src);
-	    regs->fp[reg] = sin (src);
-	    break;
-	case 0x38: /* FCMP */
-	    {
-	      fptype tmp = regs->fp[reg] == src ? 0.0 : regs->fp[reg] - src;
-	      regs->fpsr = 0;
-	      MAKE_FPSR (regs, tmp);
-	    }
-	    return;
-	case 0x3a: /* FTST */
-	    regs->fpsr = 0;
-	    MAKE_FPSR (regs, src);
-	    return;
-	default:
-	    m68k_setpc (regs, m68k_getpc (regs) - 4);
-	    op_illg (opcode, regs);
-	    return;
-	}
-	MAKE_FPSR (regs, regs->fp[reg]);
 	return;
     }
     m68k_setpc (regs, m68k_getpc (regs) - 4);
     op_illg (opcode, regs);
 }
+
+#ifdef JIT
+/* v18 (TODO 7.3): entry points for the translated FPU instructions. The
+ * translated code fetches the source operand (any format the JIT handles
+ * converts exactly like the interpreter: lfs/lfd, int to double), does
+ * FMOVE/FADD/FSUB/FMUL/FDIV/FABS/FNEG/FCMP/FTST itself and calls these for
+ * the rest, so the results are the same as in the interpreter. */
+void fpp_jit_arith (uae_u32 extra, fptype src)
+{
+    fpp_arith (&regs, (uae_u16) extra, src);
+}
+
+/* FMOVE.L/.W/.B to a data register or memory: the integer value as the
+ * interpreter calculates it (put_fp_value()) */
+uae_u32 fpp_jit_toint (fptype src)
+{
+    return (uae_u32) toint (get_rounding_mode (&regs), src);
+}
+
+/* Is the operation of a general FPU instruction known (fpp_arith())? */
+int fpp_jit_arith_valid (uae_u16 extra)
+{
+    switch (extra & 0x7f) {
+    case 0x00: case 0x40: case 0x44: case 0x01: case 0x02: case 0x03:
+    case 0x04: case 0x41: case 0x45: case 0x06: case 0x08: case 0x09:
+    case 0x0a: case 0x0c: case 0x0d: case 0x0e: case 0x0f: case 0x10:
+    case 0x11: case 0x12: case 0x14: case 0x15: case 0x16: case 0x18:
+    case 0x58: case 0x5c: case 0x19: case 0x1a: case 0x5a: case 0x5e:
+    case 0x1c: case 0x1d: case 0x1e: case 0x1f: case 0x20: case 0x60:
+    case 0x64: case 0x21: case 0x22: case 0x62: case 0x66: case 0x23:
+    case 0x63: case 0x67: case 0x24: case 0x25: case 0x26: case 0x27:
+    case 0x28: case 0x68: case 0x6c: case 0x30: case 0x31: case 0x32:
+    case 0x33: case 0x34: case 0x35: case 0x36: case 0x37: case 0x38:
+    case 0x3a:
+	return 1;
+    }
+    return 0;
+}
+#endif
 
 #endif
 

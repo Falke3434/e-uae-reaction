@@ -294,3 +294,9 @@ STATIC_INLINE void toggle_inhibit_frame (int bit)
 {
     inhibit_frame ^= 1 << bit;
 }
+
+/* v18: status line (LEDs, FPS) as 32 bit ARGB for RTG screens */
+extern int draw_status_line_height (void);
+extern void draw_status_line_argb (uae_u32 *buf, int width, int modulo);
+/* v18: the gfx driver keeps the aspect ratio itself (no omitted lines) */
+extern void drawing_set_aspect_by_driver (int on);

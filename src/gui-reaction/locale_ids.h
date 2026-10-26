@@ -506,8 +506,28 @@
 #define MSG_SET_502                502
 #define MSG_SET_503                503
 #define MSG_SET_504                504
+#define MSG_SET_505                505
+#define MSG_SET_506                506
+#define MSG_SET_507                507
+#define MSG_SET_508                508
+#define MSG_SET_509                509
+#define MSG_SET_510                510
+#define MSG_SET_511                511
+#define MSG_SET_512                512
+#define MSG_SET_513                513
+#define MSG_SET_514                514
+#define MSG_SET_515                515
+#define MSG_SET_516                516
+#define MSG_SET_517                517
+#define MSG_SET_518                518
+#define MSG_SET_519                519
+#define MSG_SET_520                520
+#define MSG_SET_521                521
+#define MSG_SET_522                522
+#define MSG_SET_523                523
+#define MSG_SET_524                524
 
-#define MSG_MAX_ID                 504
+#define MSG_MAX_ID                 524
 
 /* built-in English texts, indexed by message ID (see locale_support.c) */
 extern const char * const g_MsgDefault[MSG_MAX_ID + 1];

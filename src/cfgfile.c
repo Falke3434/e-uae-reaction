@@ -35,6 +35,10 @@
 #define CONFIG_BLEN 2560
 
 static int config_newfilesystem;
+int cfgfile_use_gui_seen;	/* v18: "use_gui=" was read */
+/* v18: comp_flushmode= and the marker comp_flushmode_v18= of the loaded file,
+ * see cfgfile_load_2() */
+static int cfg_flushmode_seen, cfg_flushmode_v18_seen;
 static struct strlist *temp_lines;
 
 /* @@@ need to get rid of this... just cut part of the manual and print that
@@ -93,6 +97,10 @@ static const struct cfg_lines opttable[] =
     {"comp_trustword", "How to access words in compiler (direct/indirect/indirectKS/afterPic" },
     {"comp_trustlong", "How to access longs in compiler (direct/indirect/indirectKS/afterPic" },
     {"comp_optimize", "Whether to optimize away native code generation where possible" },
+    {"comp_chain", "Translated blocks jump directly to each other (true/false)" },
+    {"comp_condjump", "Translated blocks continue over conditional branches (true/false)" },
+    {"comp_fixregs", "68k registers stay in PowerPC registers between blocks (true/false)" },
+    {"comp_fpu", "Translate FPU instructions (true/false)" },
     {"cachesize", "How many KB memory to use to buffer translated instructions"},
 #endif
     {"parallel_on_demand", "" },
@@ -453,6 +461,10 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
     cfgfile_write (f, "comp_trustlong=%s\n", compmode[p->comptrustlong]);
     cfgfile_write (f, "comp_optimize=%s\n", p->compoptim ? "true" : "false");
     cfgfile_write (f, "comp_constjump=%s\n", p->comp_constjump ? "true" : "false");
+    cfgfile_write (f, "comp_chain=%s\n", p->comp_chain ? "true" : "false");
+    cfgfile_write (f, "comp_condjump=%s\n", p->comp_condjump ? "true" : "false");
+    cfgfile_write (f, "comp_fixregs=%s\n", p->comp_fixregs ? "true" : "false");
+    cfgfile_write (f, "comp_fpu=%s\n", p->comp_fpu ? "true" : "false");
 #ifdef JIT_DEBUG
     cfgfile_write (f, "comp_log=%s\n", p->complog ? "true" : "false");
     cfgfile_write (f, "comp_log_compiled=%s\n", p->complogcompiled ? "true" : "false");
@@ -460,6 +472,8 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
     cfgfile_write (f, "comp_test_consistency=%s\n", p->comptestconsistency ? "true" : "false");
 
     cfgfile_write (f, "comp_flushmode=%s\n", flushmode[p->comp_hardflush]);
+    /* v18: marks a comp_flushmode= chosen with the soft default in place */
+    cfgfile_write (f, "comp_flushmode_v18=true\n");
     cfgfile_write (f, "cachesize=%d\n", p->cachesize);
 #endif
 
@@ -939,6 +953,11 @@ static int cfgfile_parse_host (struct uae_prefs *p, char *option, char *value)
 	|| cfgfile_yesno (option, value, "bsdsocket_emu", &p->socket_emu))
 	return 1;
 
+    /* v18: main.c starts a configuration given on the command line without
+     * GUI unless it says use_gui= itself */
+    if (!strcmp (option, "use_gui"))
+	cfgfile_use_gui_seen = 1;
+
     if (cfgfile_strval (option, value, "sound_output", &p->produce_sound, soundmode1, 1)
 	|| cfgfile_strval (option, value, "sound_output", &p->produce_sound, soundmode2, 0)
 	|| cfgfile_strval (option, value, "sound_interpol", &p->sound_interpol, interpolmode, 0)
@@ -1152,6 +1171,10 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
 	|| cfgfile_yesno (option, value, "comp_log_compiled", &p->complogcompiled)
 #endif
 	|| cfgfile_yesno (option, value, "comp_constjump", &p->comp_constjump)
+	|| cfgfile_yesno (option, value, "comp_chain", &p->comp_chain)
+	|| cfgfile_yesno (option, value, "comp_condjump", &p->comp_condjump)
+	|| cfgfile_yesno (option, value, "comp_fixregs", &p->comp_fixregs)
+	|| cfgfile_yesno (option, value, "comp_fpu", &p->comp_fpu)
 	|| cfgfile_yesno (option, value, "comp_test_consistency", &p->comptestconsistency)
 #endif
 	|| cfgfile_yesno (option, value, "gfxcard_hardware_sprite", &p->rtg_hardwaresprite)
@@ -1174,6 +1197,12 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
 	|| cfgfile_intval (option, value, "catweasel_io", &p->catweasel_io, 1))
 	return 1;
 #ifdef JIT
+    if (!strcmp (option, "comp_flushmode"))
+	cfg_flushmode_seen = 1;
+    if (!strcmp (option, "comp_flushmode_v18")) {
+	cfg_flushmode_v18_seen = 1;
+	return 1;
+    }
     if (cfgfile_intval (option, value, "cachesize", &p->cachesize, 1)
 	|| cfgfile_strval (option, value, "comp_trustbyte",  &p->comptrustbyte,  compmode, 1)
 	|| cfgfile_strval (option, value, "comp_trustword",  &p->comptrustword,  compmode, 1)
@@ -1593,6 +1622,7 @@ static int cfgfile_load_2 (struct uae_prefs *p, const char *filename, int real, 
 	p->config_version = 0;
 	config_newfilesystem = 0;
 	reset_inputdevice_config (p);
+	cfg_flushmode_seen = cfg_flushmode_v18_seen = 0;
     }
 
     write_log ("Opening cfgfile '%s'...", filename);
@@ -1644,6 +1674,19 @@ static int cfgfile_load_2 (struct uae_prefs *p, const char *filename, int real, 
 	sprintf (line, "%s=%s", sl->option, sl->value);
 	cfgfile_parse_line (p, line, 0);
     }
+
+#ifdef JIT
+    /* v18: the soft cache flush is the default now (as in WinUAE). Before,
+     * the GUI saved comp_flushmode=hard in every configuration (the old
+     * default), so it would stay hard everywhere. A file without the v18
+     * marker gets the new default; a hard flush chosen with v18 or later
+     * is kept. */
+    if (cfg_flushmode_seen && !cfg_flushmode_v18_seen && p->comp_hardflush == 1) {
+	write_log ("JIT: comp_flushmode=hard from a configuration before v18 - using the new default soft "
+		   "(tick \"Hard cache flush\" on the Hardware page and save to keep hard)\n");
+	p->comp_hardflush = 0;
+    }
+#endif
 
     for (i = 0; i < 4; i++)
 	subst (prefs_get_attr("floppy_path"), p->df[i], sizeof p->df[i]);
@@ -2421,8 +2464,18 @@ void default_prefs (struct uae_prefs *p, int type)
     p->complog = 0;
     p->complogcompiled = 0;
 #endif
-    p->comp_hardflush = 1;
+    /* v18: soft cache flush as default, as in WinUAE: a CPU cache flush of
+     * the Amiga (CacheClearU() - very often with AmigaOS on a 68040/060)
+     * keeps the translated code and translates again only blocks whose
+     * memory changed (checksum). The hard flush threw away the whole
+     * translation cache every time; translating everything again made the
+     * emulation stall (mouse pointer jerking). */
+    p->comp_hardflush = 0;
     p->comp_constjump = 1;
+    p->comp_chain = 1;
+    p->comp_condjump = 1;
+    p->comp_fixregs = 1;
+    p->comp_fpu = 1;
     p->cachesize = 0;
     p->comptestconsistency = 0;
     {

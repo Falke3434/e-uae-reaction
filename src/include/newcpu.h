@@ -180,6 +180,13 @@ extern struct regstruct
 #ifdef JIT
     uae_u32 jit_cache_inconsistent;
     uae_u32 regslots[COMP_REGS_ALLOCATED_SLOTS];
+#ifdef FPUEMU
+    /* v18 (TODO 7.3): work area of the translated FPU instructions */
+    fptype jit_fpu_tmp;		/* operand in memory format (8 bytes) */
+    fptype jit_fpu_conv;	/* integer to double conversion */
+    fptype jit_fpu_magic;	/* 2^52 + 2^31 (integer to double) */
+    fptype jit_fpu_zero;	/* 0.0 */
+#endif
 #endif
 } regs, lastint_regs;
 
@@ -326,6 +333,12 @@ extern void fbcc_opp     (uae_u32, struct regstruct *regs, uaecptr, uae_u32);
 extern void fsave_opp    (uae_u32, struct regstruct *regs);
 extern void frestore_opp (uae_u32, struct regstruct *regs);
 extern uae_u32 fpp_get_fpsr (const struct regstruct *regs);
+#if defined(JIT) && defined(FPUEMU)
+/* v18 (TODO 7.3): called by translated FPU instructions (fpp.c) */
+extern void fpp_jit_arith (uae_u32 extra, fptype src);
+extern uae_u32 fpp_jit_toint (fptype src);
+extern int fpp_jit_arith_valid (uae_u16 extra);
+#endif
 
 extern void exception3 (uae_u32 opcode, uaecptr addr, uaecptr fault);
 extern void exception3i (uae_u32 opcode, uaecptr addr, uaecptr fault);

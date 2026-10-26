@@ -27,8 +27,8 @@ INCLUDES = -I. -I$(srcdir) -I$(top_builddir)/src -I$(top_srcdir)/src/include -I$
 
 COMPILE = $(CC) $(DEFS) $(INCLUDES) $(UAE_CPPFLAGS) $(CPPFLAGS) $(UAE_CFLAGS) $(CFLAGS)
 
-GUI_SOURCES = gui_core.c gui_util.c gui_settings.c gui_pages.c page_media.c page_hardware.c page_display.c page_sound.c page_harddisk.c page_input.c page_shortcuts.c page_config.c locale_support.c locale_defs.c
-GUI_HEADERS = reaction_gui.h locale_ids.h
+GUI_SOURCES = gui_core.c gui_util.c gui_settings.c gui_pages.c page_media.c page_hardware.c page_display.c page_sound.c page_harddisk.c page_input.c page_shortcuts.c page_config.c locale_support.c locale_defs.c arexx.c
+GUI_HEADERS = reaction_gui.h locale_ids.h arexx.h
 GUI_OBJECTS = $(GUI_SOURCES:.c=.$(OBJEXT))
 
 DISTFILES = $(GUI_SOURCES) $(GUI_HEADERS) Makefile.am Makefile.in

@@ -1030,10 +1030,20 @@ void init_row_map (void)
 	row_map[i] = gfxvidinfo.bufmem + j;
 }
 
+/*
+ * v18 (TODO 4.3): a gfx driver that scales the finished picture itself
+ * (AmigaOS: compositing) handles "Correct aspect ratio" there, with the
+ * same factor for X and Y. The line map then stays 1:1 - before, lines were
+ * left out when the window was not exactly 4:3 (720x568: 8 lines per
+ * frame, 800x600: 36), which broke the scanline pattern.
+ */
+static int aspect_by_driver;
+
 static void init_aspect_maps (void)
 {
     int i, maxl;
     double native_lines_per_amiga_line;
+    int correct_aspect = currprefs.gfx_correct_aspect && !aspect_by_driver;
 
     if (gfxvidinfo.height == 0)
 	/* Do nothing if the gfx driver hasn't initialized the screen yet */
@@ -1048,7 +1058,7 @@ static void init_aspect_maps (void)
     amiga2aspect_line_map = (int *)malloc (sizeof (int) * (MAXVPOS + 1) * 2 + 1);
     native2amiga_line_map = (int *)malloc (sizeof (int) * gfxvidinfo.height);
 
-    if (currprefs.gfx_correct_aspect)
+    if (correct_aspect)
 	native_lines_per_amiga_line = ((double)gfxvidinfo.height
 				       * (currprefs.gfx_lores ? 320 : 640)
 				       / (currprefs.gfx_linedbl ? 512 : 256)
@@ -1070,7 +1080,7 @@ static void init_aspect_maps (void)
     if (currprefs.gfx_linedbl)
 	max_drawn_amiga_line >>= 1;
 
-    if (currprefs.gfx_ycenter && !(currprefs.gfx_correct_aspect)) {
+    if (currprefs.gfx_ycenter && !correct_aspect) {
 	/* @@@ verify maxvpos vs. MAXVPOS */
 	extra_y_adjust = (gfxvidinfo.height - (maxvpos << (currprefs.gfx_linedbl ? 1 : 0))) >> 1;
 	if (extra_y_adjust < 0)
@@ -1103,6 +1113,16 @@ static void init_aspect_maps (void)
 	for (j = amiga2aspect_line_map[i]; j < gfxvidinfo.height && native2amiga_line_map[j] == -1; j++)
 	    native2amiga_line_map[j] = i >> (currprefs.gfx_linedbl ? 1 : 0);
     }
+}
+
+void drawing_set_aspect_by_driver (int on)
+{
+    on = on ? 1 : 0;
+    if (on == aspect_by_driver)
+	return;
+    aspect_by_driver = on;
+    init_aspect_maps ();
+    notice_screen_contents_lost ();
 }
 
 /*
@@ -1769,8 +1789,27 @@ static const char *numbers = { /* ugly  0123456789CHD%JIT */
 };
 #endif
 
+/* v18: the status line can also be drawn into a 32 bit ARGB line (RTG
+ * screens, see draw_status_line_argb()); then td_argb points to that line. */
+static uae_u32 *td_argb;
+static int td_argb_width;
+
+static xcolnr td_color (int rgb)
+{
+    if (td_argb) {
+	uae_u32 r = (rgb >> 8) & 15, g = (rgb >> 4) & 15, b = rgb & 15;
+	return 0xff000000 | (r * 0x11 << 16) | (g * 0x11 << 8) | (b * 0x11);
+    }
+    return xcolors[rgb];
+}
+
 STATIC_INLINE void putpixel (int x, xcolnr c8)
 {
+    if (td_argb) {
+	if (x >= 0 && x < td_argb_width)
+	    td_argb[x] = c8;
+	return;
+    }
     switch (gfxvidinfo.pixbytes)
     {
     case 1:
@@ -1805,26 +1844,22 @@ static void write_tdnumber (int x, int y, int num)
     numptr = numbers + num * TD_NUM_WIDTH + NUMBERS_NUM * TD_NUM_WIDTH * y;
     for (j = 0; j < TD_NUM_WIDTH; j++) {
 	if (*numptr == 'x')
-	    putpixel (x + j, xcolors[0xfff]);
+	    putpixel (x + j, td_color (0xfff));
 	else if (*numptr == '+')
-	    putpixel (x + j, xcolors[0x000]);
+	    putpixel (x + j, td_color (0x000));
 	numptr++;
     }
 }
 
-static void draw_status_line (int line)
+/* one line (y = 0 .. TD_TOTAL_HEIGHT - 1) of the status line, picture width */
+static void draw_status_line_y (int y, int width)
 {
-    int x_start, y, j, led;
+    int x_start, j, led;
 
     if (td_pos & TD_RIGHT)
-	x_start = gfxvidinfo.width - TD_PADX - NUM_LEDS * TD_WIDTH;
+	x_start = width - TD_PADX - NUM_LEDS * TD_WIDTH;
     else
 	x_start = TD_PADX;
-
-    y = line - (gfxvidinfo.height - TD_TOTAL_HEIGHT);
-    xlinebuffer = gfxvidinfo.linemem;
-    if (xlinebuffer == 0)
-	xlinebuffer = row_map[line];
 
     for (led = 0; led < NUM_LEDS; led++) {
 	int side, pos, num1 = -1, num2 = -1, num3 = -1, num4 = -1;
@@ -1913,15 +1948,15 @@ static void draw_status_line (int line)
 		 //Unknown led?
 		 continue;
 	 }
-	c = xcolors[on ? on_rgb : off_rgb];
+	c = td_color (on ? on_rgb : off_rgb);
 	if (y == 0 || y == TD_TOTAL_HEIGHT - 1)
-	    c = xcolors[TD_BORDER];
+	    c = td_color (TD_BORDER);
 
 	x = x_start + pos * TD_WIDTH;
-	putpixel (x - 1, xcolors[TD_BORDER]);
+	putpixel (x - 1, td_color (TD_BORDER));
 	for (j = 0; j < TD_LED_WIDTH; j++)
 	    putpixel (x + j, c);
-	putpixel (x + j, xcolors[TD_BORDER]);
+	putpixel (x + j, td_color (TD_BORDER));
 
 	if (y >= TD_PADY && y - TD_PADY < TD_NUM_HEIGHT) {
 	    if (num3 >= 0) {
@@ -1939,6 +1974,39 @@ static void draw_status_line (int line)
 	    }
 	}
     }
+}
+
+static void draw_status_line (int line)
+{
+    xlinebuffer = gfxvidinfo.linemem;
+    if (xlinebuffer == 0)
+	xlinebuffer = row_map[line];
+    draw_status_line_y (line - (gfxvidinfo.height - TD_TOTAL_HEIGHT), gfxvidinfo.width);
+}
+
+int draw_status_line_height (void)
+{
+    return TD_TOTAL_HEIGHT;
+}
+
+/*
+ * v18: the status line as 32 bit ARGB (0xAARRGGBB) for screens that are
+ * not drawn by the chipset emulation (Picasso96/RTG). buf has
+ * draw_status_line_height() lines of 'modulo' pixels; pixels outside the
+ * LEDs get alpha 0 (transparent), the gfx driver composites it over the
+ * picture.
+ */
+void draw_status_line_argb (uae_u32 *buf, int width, int modulo)
+{
+    int y;
+
+    td_argb_width = width;
+    for (y = 0; y < TD_TOTAL_HEIGHT; y++) {
+	td_argb = buf + y * modulo;
+	memset (td_argb, 0, width * sizeof (uae_u32));
+	draw_status_line_y (y, width);
+    }
+    td_argb = NULL;
 }
 
 void finish_drawing_frame (void)

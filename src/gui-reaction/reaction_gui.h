@@ -213,7 +213,7 @@ void ra_info  (const char *fmt, ...);
 void ra_message (const char *title, const char *msg);
 
 /* Programm-Einstellungen, Menue, Info (gui_settings.c, v16) */
-enum { RA_DIR_ROM, RA_DIR_FLOPPY, RA_DIR_HARDFILE, RA_DIR_CDIMAGE, RA_DIR_CONFIG, RA_DIR_SAVESTATE, RA_DIR_COUNT };
+enum { RA_DIR_ROM, RA_DIR_FLOPPY, RA_DIR_HARDFILE, RA_DIR_CDIMAGE, RA_DIR_CONFIG, RA_DIR_SAVESTATE, RA_DIR_SCREENSHOT, RA_DIR_COUNT };
 enum { RA_LOG_OFF, RA_LOG_WINDOW, RA_LOG_FILE };
 struct ra_settings {
     char dir[RA_DIR_COUNT][MAX_DPATH];   /* "" = Vorgabe des Kerns */
@@ -224,6 +224,7 @@ extern struct ra_settings ra_settings;
 void        ra_settings_init (void);
 void        ra_settings_window (void);
 const char *ra_settings_dir (int kind);
+const char *gui_screenshot_dir (void);   /* v18, fuer ami-win.c screenshot() */
 BOOL        ra_request_file_in (int kind, const char *title, const char *pattern, BOOL save,
                                 BOOL drawers_only, char *path, ULONG pathlen);
 void        ra_about (void);

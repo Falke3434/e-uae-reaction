@@ -199,6 +199,21 @@ struct comp_compiler_mb_set_byte_from_z_flag
 };
 
 //Structure for setting the emulated PC if CRF0 Z flag is set
+/* v18 (TODO 7.5): conditional branch inside a block: the block follows
+ * the path the interpreter took, the other path leaves the block here */
+struct comp_compiler_mb_trace_exit
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	int exit_bibo;						//Bcc/DBF: BO/BI of the branch that leaves the block
+	uae_u32 exit_address;				//68k address where the execution continues outside the block
+	int cycles;							//Cycles charged when the block is left here
+	uae_s8 mapped_regs[16];				//Changed mapped 68k registers at this point
+	comp_ppc_reg decrement_reg;			//DBcc: data register
+	comp_ppc_reg tmp_reg;				//DBcc: temporary register
+	BOOL negate;						//DBcc: condition negated
+	BOOL follow_taken;					//DBcc: the block continues at the branch target
+};
+
 struct comp_compiler_mb_set_pc_on_z_flag
 {
 	struct comp_compiler_mb mb;			//Default macroblock descriptor
@@ -258,6 +273,71 @@ struct comp_compiler_mb_check_word_in_memory
 
 
 //Union of all macroblock descriptor structures
+//v18: checked direct memory access (bit 0 test of baseaddr[])
+struct comp_compiler_mb_access_memory_checked
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	comp_ppc_reg output_reg;			//Destination (read) or source (write) register
+	comp_ppc_reg base_reg;				//Register with the 68k address
+	comp_ppc_reg temp_reg;				//Temporary register, trashed
+	int size;							//1, 2, 4 or -2 (sign extended word, read only)
+};
+
+//v18: shift/rotate with a count in a register (count modulo 64)
+struct comp_compiler_mb_shift_count
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	comp_ppc_reg dest_reg;				//Data register (operand and result)
+	comp_ppc_reg count_reg;				//Register with the shift count (only bits 0-5 used)
+	comp_ppc_reg temp_reg[4];			//Temporary registers, trashed
+	int kind;							//COMP_SHIFT_* constant
+	int size;							//1, 2 or 4
+};
+
+//v18: MULU.L/MULS.L
+struct comp_compiler_mb_mull
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	comp_ppc_reg src_reg, dl_reg, dh_reg, t0, t1;
+	BOOL is_signed, is_64, high_last;
+};
+
+//v18: ABCD/SBCD/NBCD
+struct comp_compiler_mb_bcd
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	comp_ppc_reg src_reg, dest_reg, t[5];
+	int kind;
+};
+
+//v18: bit field instructions on a data register
+struct comp_compiler_mb_bitfield_reg
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	comp_ppc_reg d, r, off, wid, t[4];
+	comp_ppc_reg lo;					//bitfield_mem only (d = hi)
+	int kind;
+};
+
+//v18 (TODO 7.3): FPU operations, see comp_macroblock_push_fpu()
+struct comp_compiler_mb_fpu
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	int kind;							//COMP_FPU_* constant
+	int fpreg;							//FPU register
+	uae_u32 extra;						//Extension word of the instruction / condition
+	int size;							//Integer operand size (1, 2, 4)
+	comp_ppc_reg gpr;					//Integer register operand
+	uae_u32 hi, lo;						//Constant operand (double)
+};
+
+//v18: stack frame allocation/release
+struct comp_compiler_mb_stack_frame
+{
+	struct comp_compiler_mb mb;			//Default macroblock descriptor
+	uae_u16 size;						//Frame size in bytes (multiple of 16)
+};
+
 union comp_compiler_mb_union
 {
 	struct comp_compiler_mb base;
@@ -285,4 +365,12 @@ union comp_compiler_mb_union
 	struct comp_compiler_mb_division_three_reg_opcode division_three_reg_opcode;
 	struct comp_compiler_mb_division_64_bit_opcode division_64_bit_opcode;
 	struct comp_compiler_mb_check_word_in_memory check_word_in_memory;
+	struct comp_compiler_mb_access_memory_checked access_memory_checked;
+	struct comp_compiler_mb_stack_frame stack_frame;
+	struct comp_compiler_mb_shift_count shift_count;
+	struct comp_compiler_mb_mull mull;
+	struct comp_compiler_mb_bcd bcd;
+	struct comp_compiler_mb_bitfield_reg bitfield_reg;
+	struct comp_compiler_mb_trace_exit trace_exit;
+	struct comp_compiler_mb_fpu fpu;
 };

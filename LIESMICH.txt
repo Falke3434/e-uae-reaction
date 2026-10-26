@@ -1,5 +1,5 @@
 ReAction-GUI fuer E-UAE (AmigaOS 4.1)
-E-UAE 2.0.0 mit ReAction-GUI 1.0 (interner Stand v17)
+E-UAE 2.0.0 mit ReAction-GUI 1.0 (interner Stand v18)
 
 Den Inhalt dieses Ordners ueber den E-UAE-Quellbaum kopieren (Dateien ersetzen):
   configure, configure.in, src/Makefile.in, src/Makefile.am  (angepasst)
@@ -39,6 +39,8 @@ in die Makefiles.
 Von v16 auf v17 ebenso "sh configure ..." neu aufrufen und "make clean":
 akiko.c (CD32) kommt erst damit in die Makefiles (-DCD32), und viele
 Header (options.h, memory.h, akiko.h, cdimage.h) haben sich geaendert.
+Von v17 auf v18 "make clean": JIT-Header und struct regstruct haben sich
+geaendert, gencpu/gencomp muessen neu laufen (cpuemu_*.c, compstbl.c).
 
 Grafikkarte (Picasso96 / RTG) ab v16:
   - Die Karte uaegfx.card ist in E-UAE eingebaut. Auf der Amiga-Seite
@@ -121,18 +123,52 @@ Hinweis: WHDLoad ab 18.1 prueft bei jedem Start per Netzwerk auf Updates
 (abschalten mit dem Tooltype NoNetwork).
 
 Ton: laeuft die Emulation langsamer als in Echtzeit (fps unter 50 in der
-Statuszeile, z. B. MP3 mit einem FPU-Decoder - der JIT uebersetzt keine
-FPU-Befehle), wird der Ton langsam und knackt.
+Statuszeile, z. B. MP3 mit einem FPU-Decoder ohne JIT), wird der Ton
+langsam und knackt. Ab v18 uebersetzt der JIT auch FPU-Befehle (nicht auf
+dem A1222).
+
+Screenshots ab v18: Strg+Alt+P speichert das Bild der Emulation (Chipsatz
+oder Grafikkarte, ohne Fensterrahmen) als PNG, E-UAE_0001.png ... im
+Screenshot-Ordner der Einstellungen (Vorgabe PROGDIR:Screenshots).
+
+Bild ab v18: RTG-Screens erscheinen im Fenster in ihrer eigenen Aufloesung
+(1:1, wie bei WinUAE), hoechstens so gross wie der Workbench-Screen. Beim
+Skalieren bleibt das Seitenverhaeltnis erhalten (RTG immer, Chipsatz mit
+"Seitenverhaeltnis korrigieren"), der Rest wird schwarz. Es werden keine
+Amiga-Zeilen mehr weggelassen (Scanlines bleiben sauber).
+
+ARexx-Port ab v18: E-UAE hat wieder den ARexx-Port "UAE" (QUIT, RESET,
+INSERT, EJECT, UAEEXE, QUERY, FRAMERATE, ...), z. B. fuer RunInUAE von der
+AmigaOS-4.1-CD (dort unter "E-UAE program" das neue E-UAE eintragen).
+Eine Konfiguration oder ein Disk-Image auf der Kommandozeile (-f, -0)
+startet ohne GUI, ausser die Konfiguration enthaelt use_gui=. Der Bildpuffer
+hat jetzt auch ohne GUI die Fenster- bzw. Vollbildgroesse (vorher 720x552:
+gestauchtes Bild, doppelte Scanlines).
+
+JIT ab v18: Mit "Konstante Spruenge" ruckelte und sprang der Mauszeiger auf
+der Workbench etwa 20 Sekunden nach dem Start (Bloecke ueber Bibliotheks-
+spruenge wurden bei jedem Cache-Flush neu uebersetzt). Behoben - die Option
+kann wieder an bleiben.
+
+Maus ab v18: Die Mauszaehler arbeiten wie bei WinUAE (kein Zurueckspringen
+mehr, wenn der Amiga die Maus nicht in jedem Bild liest). Neu auf der Seite
+"Eingabe": "Magic Mouse" - im Fenster mit einem RTG-Bildschirm folgt der
+Amiga-Zeiger dem Workbench-Zeiger, ohne die Maus einzufangen.
+
+Savestates ab v18: "Savestate speichern..." haengt ".uss" an; "Savestate
+laden..." geht auch bei gestoppter Emulation - sie startet dann mit dem
+gespeicherten Zustand.
 
 Freezer-Module ab v17 (Seite "Medien", Feld "Modul"): Action Replay 1/2/3
 (ROM-Abbild des echten Moduls) oder HRTMon. Strg+Alt+F friert ein und
 oeffnet den Monitor des Moduls. AR2/AR3 sind fuer 68000-Amigas gedacht.
 
 Einstellungen ab v16 (Menue rechte Maustaste -> Projekt -> Einstellungen...):
-  - Ordner fuer ROMs, Disketten, Hardfiles, CD-Images, Konfigurationen und
-    Savestates: dort beginnen die Dateirequester, solange das Feld leer ist.
-    Leer = Vorgabe (PROGDIR:Roms/, PROGDIR:Floppies/, PROGDIR:HardFiles/,
-    PROGDIR:SaveStates/, PROGDIR:configs).
+  - Ordner fuer ROMs, Disketten, Hardfiles, CD-Images, Konfigurationen,
+    Savestates und (ab v18) Screenshots: dort beginnen die Dateirequester,
+    solange das Feld leer ist. Leer = Vorgabe (PROGDIR:Roms/,
+    PROGDIR:Floppies/, PROGDIR:HardFiles/, PROGDIR:Isos/, PROGDIR:configs,
+    PROGDIR:SaveStates/, PROGDIR:Screenshots).
   - Log-Ausgabe: Aus / Fenster / Datei PROGDIR:E-UAE.log.
   - ab v17: "GUI nach dem Start ikonifizieren" (Vorgabe an). Das Fenster
     hat ausserdem ein Ikonifizieren-Gadget; Doppelklick aufs Icon holt es

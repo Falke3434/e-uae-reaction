@@ -16,7 +16,7 @@ just-in-time compiler for 68020+ code (PowerPC JIT by Almos Rajnai). This
 release adds a native ReAction configuration GUI and many fixes and new
 features to the AmigaOS 4 version of E-UAE.
 
-E-UAE 2.0.0 with ReAction GUI 1.0 (internal build v17).
+E-UAE 2.0.0 with ReAction GUI 1.0 (internal build v18).
 
 It runs on all AmigaOS 4.1 PPC systems (AmigaOne X5000/X1000/A1222,
 Sam440/460, Pegasos II, Classic PPC) and under QEMU.
@@ -28,7 +28,8 @@ Highlights
  * ReAction GUI with pages for media, hardware, display, sound, hard
    disks, input, shortcuts and configuration; tooltips; English and German
    (locale catalog)
- * PowerPC JIT compiler, 68000 - 68060, FPU, AGA, Zorro II/III memory
+ * PowerPC JIT compiler for 68020 - 68060 code with block chaining and
+   FPU translation, 68000 - 68060, FPU, AGA, Zorro II/III memory
  * Built-in Picasso96 graphics card (uaegfx.card in the boot ROM, up to
    128 MB, hardware mouse pointer, VBLANK interrupt)
  * Hard disks: directories, hardfiles (with RDB), IDE controller of the
@@ -41,7 +42,8 @@ Highlights
    model preset
  * Disk images also inside ZIP, GZ, LHA and LZX archives
  * Create blank floppy disks and hardfiles from the GUI
- * Configurable hotkeys, savestates, bsdsocket.library emulation
+ * Configurable hotkeys, savestates, screenshots (PNG),
+   bsdsocket.library emulation
 
 
 Installation
@@ -62,9 +64,25 @@ Usage notes
 -----------
 
  * Right mouse button menu of the GUI window: About, Settings, Quit.
- * Settings: default folders for ROMs, floppies, hardfiles, CD images,
-   configurations and savestates, and the log output (off / window /
-   file PROGDIR:E-UAE.log). Saved in PROGDIR:E-UAE.prefs.
+ * Settings: default folders for ROMs, floppies, hardfiles, CD images
+   (PROGDIR:Isos/), configurations, savestates and screenshots
+   (PROGDIR:Screenshots), and the log output (off / window / file
+   PROGDIR:E-UAE.log). Saved in PROGDIR:E-UAE.prefs.
+ * Screenshot: Ctrl + Alt + P saves the emulated picture (chipset or
+   graphics card) as PNG, E-UAE_0001.png ... in the screenshot folder.
+ * Savestates (Configuration page): "Save savestate..." adds ".uss";
+   "Load savestate..." also works while the emulation is stopped - it
+   then starts with the saved state.
+ * ARexx port "UAE" (QUIT, RESET, INSERT, EJECT, UAEEXE, QUERY, ...),
+   e.g. for RunInUAE from the AmigaOS 4.1 CD (set "E-UAE program" in
+   RunInUAE's settings to the new E-UAE). A configuration or disk image
+   given on the command line (-f, -0) starts without GUI, unless the
+   configuration contains use_gui=.
+ * JIT: the switches on the Hardware page (memory access, block chaining,
+   translation across branches, fixed registers, FPU translation) can be
+   turned off one by one to find the cause of a problem. "Direct" memory
+   access is the fastest. The status line shows the share of translated
+   code ("JIT 99%").
  * "Save" writes the default configuration, "Save as..." any file
    (".cfg" is added).
  * CD-ROM: Hard disks page -> "Add CD-ROM drive...". To boot from CD tick
@@ -88,6 +106,44 @@ Usage notes
 
 History
 -------
+
+v18 (E-UAE 2.0.0, ReAction GUI 1.0)
+ Core:
+  - PowerPC JIT: crashes and wrong results fixed (checked opcode by
+    opcode against the interpreter with a new test harness); "Direct"
+    memory access usable
+  - JIT much faster: translated blocks chained, blocks across branches,
+    68k registers kept in PowerPC registers, FPU instructions translated
+    (not on the A1222 - no classic FPU)
+  - Interpreter: bit field and PACK/UNPK fixes
+  - Autoconfig: empty slots no longer look like boards (Action Replay 3
+    "configured" empty slots again and again)
+ GUI:
+  - JIT settings on the Hardware page, JIT share in the status line
+  - Screenshots as PNG (Ctrl + Alt + P), folder in Settings
+  - Status line (LEDs, FPS) also on graphics card (RTG) screens
+  - RTG screens in a window in their own resolution (1:1); aspect ratio
+    kept when scaled, no more left out lines with "Correct aspect ratio"
+  - Default folder PROGDIR:Isos/ for CD images
+  - Floppy requester: FDI images (IPF removed until IPF support exists)
+  - Savestates: ".uss" added when saving; loading also from the stopped
+    state
+  - ARexx port "UAE" again (RunInUAE works), command line
+    configurations start without GUI
+  - Magic Mouse (Input page): in a window with an RTG screen the Amiga
+    pointer follows the Workbench pointer, no mouse grab
+  - New program icon
+ Fixes:
+  - Picture shifted by one pixel, coloured bar at the bottom of the
+    picture
+  - Window title said "Display off" over RTG screens
+  - JIT: mouse pointer lagging and jumping on the Workbench (blocks over
+    constant jumps were translated again at every cache flush)
+  - Mouse pointer jumping back / lagging (counters as in WinUAE), RTG
+    pointer redraws only its own area
+  - Picture squeezed with double scanlines when a configuration was
+    started without GUI (picture buffer size)
+  - Start from the Workbench icon showed an ASL requester and quit
 
 v17 (E-UAE 2.0.0, ReAction GUI 1.0)
  Core:
@@ -189,7 +245,7 @@ Credits
  PowerPC JIT           Almos Rajnai
  AmigaOS 4 updates     Kjetil Hvalstrand (LiveForIt), Fredrik Wikstrom
                        (salass00), Josef Wegner
- ReAction GUI, v1-v17  Falke_34
+ ReAction GUI, v1-v18  Falke_34
 
 E-UAE is free software under the GNU General Public License, see COPYING.
 More details: README (E-UAE PPC JIT), README_original (E-UAE 0.8.29).

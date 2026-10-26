@@ -15,12 +15,27 @@
 STATIC_INLINE void helper_schedule_branch(uae_u32 opcode, int reference, BOOL is_16bit_instruction);
 STATIC_INLINE BOOL helper_is_inside_branch_range(uae_u32 offset, BOOL is_16bit_instruction);
 STATIC_INLINE void comp_reset_tmp_register(comp_tmp_reg* temp_reg);
+static BOOL comp_memfb_create_stub(void);
 
 /* Number of temporary registers */
 #define PPC_TMP_REGS_COUNT 11
 
+/* v18 (TODO 7.4): 68k registers that stay in PowerPC registers r21-r30
+ * while translated code runs (see comp_fixregs_select()). Their
+ * descriptors follow the temporary registers in used_tmp_regs[]. */
+#define COMP_FIXREGS_COUNT 10
+#define COMP_FIXREGS_FIRST_PPC 21
+#define COMP_FIXREGS_PPC_MASK (0x3ffu << COMP_FIXREGS_FIRST_PPC)
+static const int comp_fixregs_68k[COMP_FIXREGS_COUNT] = {
+	0, 1, 2, 3,				/* D0-D3 */
+	8, 9, 10,				/* A0-A2 */
+	13, 14, 15				/* A5-A7 */
+};
+static BOOL comp_fixregs_on = FALSE;
+STATIC_INLINE BOOL comp_is_fixed_descriptor(comp_tmp_reg* t);
+
 /* Maximum number of handled branch instruction scheduling */
-#define MAX_BRANCH_SCHEDULE 3
+#define MAX_BRANCH_SCHEDULE 6
 
 /* List of temporary registers
  * Note: do not use this array directly, get the register mapping by
@@ -45,7 +60,7 @@ PPCR_TMP10 };
  *    PPC_TMP_REG_NOTUSED - temporary register is not mapped
  *    PPC_TMP_REG_ALLOCATED - temporary register is allocated for other purpose than M68k register emulation
  *    other - temporary register is allocated and mapped for a M68k register, the item contains the M68k register number */
-comp_tmp_reg used_tmp_regs[PPC_TMP_REGS_COUNT];
+comp_tmp_reg used_tmp_regs[PPC_TMP_REGS_COUNT + COMP_FIXREGS_COUNT];
 
 /* Structure for the M68k register mapping to the temporary registers */
 struct m68k_register {
@@ -81,6 +96,73 @@ uae_u8* compiled_code = NULL;
  */
 
 uae_u8* compiled_code_top = NULL;
+
+/**
+ * v18: upper limit for comp_ppc_emit_word(). Normally compiled_code_top;
+ * while the fallback stub is generated it is the end of the stub buffer.
+ * A block that does not fit is not written past the end of the buffer any
+ * more (BYTES_PER_BLOCK is only a margin, a block of up to MAXRUN
+ * instructions can be much larger): the compiling is aborted instead and
+ * the code cache is flushed.
+ */
+static uae_u8* comp_emit_limit = NULL;
+static BOOL comp_buffer_overflow = FALSE;
+
+/**
+ * v18: fallback stub for checked direct memory accesses (see
+ * comp_memfb_fallback()), in its own small executable buffer so that a
+ * flush of the code cache does not remove it.
+ */
+#define COMP_MEMFB_STUB_BYTES 512
+static uae_u8* comp_memfb_stub_code = NULL;
+
+/**
+ * v18 (TODO 7.1): the same buffer holds the chaining stub behind the
+ * fallback stub, at COMP_CHAIN_STUB_OFFSET (r20 = start of the buffer in
+ * every translated block). See comp_chain_create_stub().
+ */
+#define COMP_CHAIN_STUB_OFFSET	COMP_MEMFB_STUB_BYTES
+#define COMP_STUB_BUFFER_BYTES	2048
+static BOOL comp_chain_active = FALSE;
+static int comp_chain_entry_offset = 0;
+static void comp_chain_create_stub(void);
+
+/**
+ * v18: the JIT may emit mcrxr (60x/G3/G4 only), otherwise the XER bits
+ * are copied with mfxer/rlwinm/mtcrf. Set by comp_ppc_detect_cpu().
+ */
+BOOL comp_ppc_native_mcrxr = FALSE;
+
+/**
+ * v18 (TODO 7.3): the host has a classic FPU (FPU instructions are translated)
+ */
+BOOL comp_ppc_has_fpu = FALSE;
+
+/**
+ * v18: total cycles of the block being compiled (for the cycles that
+ * are charged when a translated instruction raises an exception)
+ */
+static int comp_block_totcycles = 0;
+
+/**
+ * v18: statistics of the soft cache flush (comp_flushmode=soft)
+ */
+static struct {
+	uae_u32 flushes;		/* soft flushes requested by the 68k */
+	uae_u32 marked;			/* blocks marked for the checksum test */
+	uae_u32 invalidated;	/* blocks without code, sent to recompile */
+	uae_u32 checked;		/* checksum tests done */
+	uae_u32 unchanged;		/* ... block unchanged, reactivated */
+	uae_u32 changed;		/* ... block changed, recompiled */
+} soft_flush_stats;
+#define SOFT_FLUSH_LOG_INTERVAL 1000
+static void log_soft_flush_stats(const char* reason);
+
+/**
+ * v18: number of blocks that were not translated because of an
+ * internal compiling error (logged, the block runs in the interpreter)
+ */
+static uae_u32 comp_error_blocks = 0;
 
 /**
  * Current top of the compiling target
@@ -158,8 +240,17 @@ static void free_cache(void)
 	if (compiled_code)
 	{
 		flush_icache_hard("free cache");
+		log_soft_flush_stats("free cache");
 		cache_free(compiled_code);
 		compiled_code = NULL;
+		comp_emit_limit = NULL;
+
+		if (comp_memfb_stub_code)
+		{
+			cache_free(comp_memfb_stub_code);
+			comp_memfb_stub_code = NULL;
+		}
+		comp_chain_active = FALSE;
 
 		write_log("JIT: Deallocated translation cache.\n");
 
@@ -174,6 +265,7 @@ static void alloc_cache(void)
 
 	//Set JIT LED to off on screen
 	gui_data.jiton = 0;
+	gui_data.jitpct = -1;
 
 	//If the processor type is not suitable for JIT (no CPU cache) then leaving
 	if (currprefs.cpu_level < 2)
@@ -204,25 +296,44 @@ static void alloc_cache(void)
 		if (!compiled_code) currprefs.cachesize /= 2;
 	}
 
-	//Initialize the pointers
-	if (compiled_code)
+	if (!compiled_code)
 	{
-		compiled_code_top = compiled_code + currprefs.cachesize * 1024;
-		max_compile_start = compiled_code_top - BYTES_PER_BLOCK;
-		current_compile_p = compiled_code;
+		//v18: was reported as allocated and the LED switched on
+		write_log("JIT: Failed to allocate the translation cache, JIT compiler is off.\n");
+		changed_prefs.cachesize = currprefs.cachesize = 0;
+		return;
 	}
 
-	//JIT is on, set JIT LED on
-	gui_data.jiton = 1;
+	//Initialize the pointers
+	compiled_code_top = compiled_code + currprefs.cachesize * 1024;
+	max_compile_start = compiled_code_top - BYTES_PER_BLOCK;
+	current_compile_p = compiled_code;
+	comp_emit_limit = compiled_code_top;
 
 	write_log("JIT: Allocated %d KB translation cache.\n", currprefs.cachesize);
 
-	//Allocate macroblock buffer
-	if (!comp_alloc_macroblock_buffer())
+	//v18: CPU features for the code generator
+	comp_ppc_detect_cpu();
+
+	//Allocate macroblock buffer and the fallback stub for direct memory accesses
+	//(v18: switch the JIT off instead of abort() when that fails)
+	if (!comp_alloc_macroblock_buffer() || !comp_memfb_create_stub())
 	{
-		write_log("Error: failed to allocate macroblock buffer\n");
-		abort();
+		write_log("JIT: Failed to allocate the JIT work buffers, JIT compiler is off.\n");
+		comp_free_macroblock_buffer();
+		cache_free(compiled_code);
+		compiled_code = NULL;
+		comp_emit_limit = NULL;
+		changed_prefs.cachesize = currprefs.cachesize = 0;
+		return;
 	}
+
+	//v18 (TODO 7.1): block chaining stub (depends on the prefs and the
+	//address of the translation cache)
+	comp_chain_create_stub();
+
+	//JIT is on, set JIT LED on
+	gui_data.jiton = 1;
 }
 
 void set_cache_state(int enabled)
@@ -240,7 +351,64 @@ void set_cache_state(int enabled)
 
 /**
  * Preferences handling
+ *
+ * v18: check_prefs_changed_comp() also runs in the vertical blank handler,
+ * that is inside do_cycles(), which translated code calls (chaining stub,
+ * exceptions). Changing the stubs or freeing the translation cache there
+ * would pull the code away under the running block. While the JIT loop
+ * runs (comp_run_loop_active, set by m68k_run_2a()), such changes are only
+ * marked and the translated code is left (SPCFLAG_END_COMPILE); the JIT
+ * loop applies them with comp_apply_pending_prefs() between two blocks.
  **/
+int comp_run_loop_active = 0;
+int comp_prefs_pending = 0;
+
+static int comp_prefs_need_restart(void)
+{
+	return currprefs.comp_constjump != changed_prefs.comp_constjump
+		|| currprefs.comp_chain != changed_prefs.comp_chain
+		|| currprefs.comp_condjump != changed_prefs.comp_condjump
+		|| currprefs.comp_fixregs != changed_prefs.comp_fixregs
+		|| currprefs.comp_fpu != changed_prefs.comp_fpu
+		|| currprefs.comptestconsistency != changed_prefs.comptestconsistency
+		|| currprefs.cachesize != changed_prefs.cachesize;
+}
+
+void comp_apply_pending_prefs(void)
+{
+	comp_prefs_pending = 0;
+
+	//These change the translated code itself: start over with an empty
+	//translation cache (the stubs are generated again)
+	if (currprefs.comp_constjump != changed_prefs.comp_constjump
+		|| currprefs.comp_chain != changed_prefs.comp_chain
+		|| currprefs.comp_condjump != changed_prefs.comp_condjump
+		|| currprefs.comp_fixregs != changed_prefs.comp_fixregs
+		|| currprefs.comp_fpu != changed_prefs.comp_fpu
+		|| currprefs.comptestconsistency != changed_prefs.comptestconsistency)
+	{
+		currprefs.comp_constjump = changed_prefs.comp_constjump;
+		currprefs.comp_chain = changed_prefs.comp_chain;
+		currprefs.comp_condjump = changed_prefs.comp_condjump;
+		currprefs.comp_fixregs = changed_prefs.comp_fixregs;
+		currprefs.comp_fpu = changed_prefs.comp_fpu;
+		currprefs.comptestconsistency = changed_prefs.comptestconsistency;
+		if (compiled_code && currprefs.cachesize == changed_prefs.cachesize)
+		{
+			write_log("JIT: translation settings changed, translating again\n");
+			flush_icache_hard("settings changed");
+			comp_chain_create_stub();
+		}
+	}
+
+	if (currprefs.cachesize != changed_prefs.cachesize)
+	{
+		currprefs.cachesize = changed_prefs.cachesize;
+		free_cache();
+		alloc_cache();
+	}
+}
+
 void check_prefs_changed_comp(void)
 {
 	currprefs.comptrustbyte = changed_prefs.comptrustbyte;
@@ -252,15 +420,19 @@ void check_prefs_changed_comp(void)
 	currprefs.complogcompiled = changed_prefs.complogcompiled;
 #endif
 	currprefs.comp_hardflush = changed_prefs.comp_hardflush;
-	currprefs.comp_constjump = changed_prefs.comp_constjump;
-	currprefs.comptestconsistency = changed_prefs.comptestconsistency;
 
-	if (currprefs.cachesize != changed_prefs.cachesize)
+	if (!comp_prefs_need_restart())
+		return;
+
+	if (comp_run_loop_active)
 	{
-		currprefs.cachesize = changed_prefs.cachesize;
-		free_cache();
-		alloc_cache();
+		//Applied by the JIT loop between two blocks
+		comp_prefs_pending = 1;
+		set_special(&regs, SPCFLAG_END_COMPILE);
+		return;
 	}
+
+	comp_apply_pending_prefs();
 
 	//TODO: do we really need the canbang setting? we figure out the memory access on our own and there are the comp_trust settings too
 //	if ((!canbang || !currprefs.cachesize) && currprefs.comptrustbyte != 1)
@@ -300,8 +472,15 @@ void comp_init(void)
 	/* Reset temporary register assignments */
 	comp_reset_temp_registers();
 
+	/* v18: a block aborted by a compiling error may leave saved
+	 * register slots behind */
+	next_empty_register_slot = 0;
+
 	/* Initialize macroblock compiler */
 	comp_compiler_init();
+
+	/* v18: no pending fallback calls (TODO 5.15) */
+	comp_memfb_pending_reset();
 }
 
 /**
@@ -315,28 +494,48 @@ void comp_done(void)
 	write_jit_log("Done compiling\n");
 #endif
 
+	/* v18: the consistency checks moved to comp_verify_block(), which
+	 * runs before the block is installed (the old checks here ran after it
+	 * and called abort()). Only reset the state for the next block. */
+	for (i = 0; i < MAX_BRANCH_SCHEDULE; i++)
+	{
+		compiled_branch_instruction[i].address = NULL;
+		compiled_branch_target[i] = NULL;
+	}
+	next_empty_register_slot = 0;
+
+	comp_compiler_done();
+}
+
+/**
+ * v18: consistency checks of a freshly generated block. A failed check
+ * marks the block as not compilable (it is then interpreted) instead of
+ * stopping the emulator.
+ */
+static void comp_verify_block(void)
+{
+	int i;
+
 	for (i = 0; i < MAX_BRANCH_SCHEDULE; i++)
 	{
 		if (compiled_branch_instruction[i].address != NULL)
 		{
-			write_log("Compiling error: branch instruction compiling was not completed, branch instruction address: 0x%08x\n", compiled_branch_instruction[i]);
-			abort();
+			write_log("JIT: Compiling error: branch instruction compiling was not completed, branch instruction address: %p\n", compiled_branch_instruction[i].address);
+			comp_compile_error();
 		}
 
 		if (compiled_branch_target[i] != NULL)
 		{
-			write_log("Compiling error: branch instruction compiling was scheduled, but not completed, target address: 0x%08x\n", compiled_branch_target[i]);
-			abort();
+			write_log("JIT: Compiling error: branch instruction compiling was scheduled, but not completed, target address: %p\n", compiled_branch_target[i]);
+			comp_compile_error();
 		}
 	}
 
 	if (next_empty_register_slot != 0)
 	{
-		write_log("Compiling error: Register was not restored from the context before the end of the compiled block.\n");
-		abort();
+		write_log("JIT: Compiling error: Register was not restored from the context before the end of the compiled block.\n");
+		comp_compile_error();
 	}
-
-	comp_compiler_done();
 }
 
 /**
@@ -386,10 +585,12 @@ static void check_checksum(void)
 	{
 		c1 = c2 = 1; /* Make sure it doesn't match */
 	}
+	soft_flush_stats.checked++;
 	if (c1 == bi->c1 && c2 == bi->c2)
 	{
 		/* This block is still OK. So we reactivate. Of course, that
 		 means we have to move it into the needs-to-be-flushed list */
+		soft_flush_stats.unchanged++;
 		bi->handler_to_use = bi->handler;
 
 		/* Back to the active list, otherwise the next soft flush would
@@ -401,6 +602,7 @@ static void check_checksum(void)
 	{
 		/* This block actually changed. We need to invalidate it,
 		 and set it up to be recompiled */
+		soft_flush_stats.changed++;
 		invalidate_block(bi);
 		add_to_active(bi);
 		raise_in_cl_list(bi);
@@ -422,6 +624,15 @@ void compemu_reset(void)
 		used_tmp_regs[i].mapped_reg_num = PPCR_MAPPED_REG(PPC_TMP_REGS[i]);
 		used_tmp_regs[i].reg_usage_mapping = COMP_COMPILER_MACROBLOCK_REG_TMP(i);
 		comp_reset_tmp_register(&used_tmp_regs[i]);
+	}
+
+	/* v18 (TODO 7.4): descriptors of the fixed 68k registers */
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+	{
+		comp_tmp_reg* t = &used_tmp_regs[PPC_TMP_REGS_COUNT + i];
+		t->mapped_reg_num = PPCR_MAPPED_REG(COMP_FIXREGS_FIRST_PPC + i);
+		t->reg_usage_mapping = COMP_COMPILER_MACROBLOCK_REG_TMP(PPC_TMP_REGS_COUNT + i);
+		comp_reset_tmp_register(t);
 	}
 
 	/* Clear M68k - PPC temp register mapping */
@@ -529,6 +740,10 @@ void flush_icache(int n)
 
 	write_jit_log("Flush icache soft (%d/%x/%p)\n", n, regs.pc, regs.pc_p);
 
+	soft_flush_stats.flushes++;
+	if ((soft_flush_stats.flushes % SOFT_FLUSH_LOG_INTERVAL) == 0)
+		log_soft_flush_stats("periodic");
+
 	for (bi = active; bi; bi = next)
 	{
 		uae_u32 cl = cacheline(bi->pc_p);
@@ -540,10 +755,12 @@ void flush_icache(int n)
 			/* Invalidated block or block of unsupported instructions only:
 			 * let it run through the normal compiling path again (same as
 			 * after a hard flush). */
+			soft_flush_stats.invalidated++;
 			invalidate_block(bi);
 		}
 		else
 		{
+			soft_flush_stats.marked++;
 			bi->handler_to_use = check_checksum_callback;
 		}
 
@@ -561,11 +778,114 @@ void flush_icache(int n)
 }
 
 /**
+ * v18: writes the statistics of the soft cache flush to the log
+ * (every SOFT_FLUSH_LOG_INTERVAL soft flushes and when the cache is freed),
+ * to judge whether comp_flushmode=soft pays off for a program.
+ */
+static uae_u32 comp_trace_far_jumps = 0;	/* v18: blocks ended at a far branch */
+
+static void log_soft_flush_stats(const char* reason)
+{
+	if (soft_flush_stats.flushes == 0)
+		return;
+	write_log("JIT: soft flush statistics (%s): %u flushes, %u blocks marked, %u sent to recompile; "
+			"%u checksum tests: %u unchanged (kept), %u changed (recompiled); "
+			"%u blocks ended at a far branch\n",
+			reason,
+			(unsigned) soft_flush_stats.flushes, (unsigned) soft_flush_stats.marked,
+			(unsigned) soft_flush_stats.invalidated, (unsigned) soft_flush_stats.checked,
+			(unsigned) soft_flush_stats.unchanged, (unsigned) soft_flush_stats.changed,
+			(unsigned) comp_trace_far_jumps);
+}
+
+/**
  * Returns a pointer to the address of the currently compiled M68k instruction
  */
 uae_u16* comp_current_m68k_location()
 {
 	return compiled_m68k_location;
+}
+
+/**
+ * v18 (TODO 7.5): blocks over branches
+ *
+ * execute_normal() records the instructions of a block while the
+ * interpreter runs them; before, a block ended at every branch. Now the
+ * recording goes on over
+ *   - conditional branches (Bcc, DBcc; comp_condjump): the block follows
+ *     the path the interpreter took, the translated branch leaves the block
+ *     when the condition goes the other way (side exit)
+ *   - branches with a fixed target (BRA, BSR, JMP/JSR to an absolute
+ *     address; comp_constjump): the target follows in the block, BSR/JSR
+ *     only push the return address
+ * The block ends when the next instruction is already in it (a loop: the
+ * branch back to the start stays the end of the block and is chained), at
+ * every other jump (RTS, JMP (An), ...) and unsupported instruction, after
+ * COMP_TRACE_MAX_JUMPS branches, or when the block is long already.
+ * Returns non-zero when the block ends after this instruction.
+ */
+#define COMP_TRACE_MAX_JUMPS	16
+#define COMP_TRACE_MAX_LEN		200
+static int comp_trace_jumps = 0;
+
+int comp_trace_end(uae_u16 opcode, const cpu_history* pc_hist, int blocklen, uae_u8* next_pc_p)
+{
+	struct comptbl* props = &compprops[opcode];
+	compop_func* h = props->instr_handler;
+	int i;
+
+	if (blocklen == 1) comp_trace_jumps = 0;
+
+	//v18: an instruction that runs in the interpreter is the last one of
+	//its block (it may raise an exception, e.g. an FPU instruction without
+	//FPU); unsupported instructions are marked as jumps anyway
+	if (h == NULL || !comp_fpu_compilable(opcode, pc_hist[blocklen - 1].location))
+		return 1;
+
+	if (!(props->specific & COMPTBL_SPEC_ISJUMP))
+		return (props->specific & COMPTBL_SPEC_ISCONSTJUMP) && !currprefs.comp_constjump;
+
+	if (h == comp_opcode_BCOND || h == comp_opcode_DBCOND || h == comp_opcode_DBF || h == comp_opcode_FBCOND)
+	{
+		if (!currprefs.comp_condjump) return 1;
+	}
+	else if (h == comp_opcode_BRA || h == comp_opcode_BSR || h == comp_opcode_JMPIMM || h == comp_opcode_JSRIMM)
+	{
+		if (!currprefs.comp_constjump) return 1;
+	}
+	else return 1;
+
+	if (blocklen >= COMP_TRACE_MAX_LEN || ++comp_trace_jumps > COMP_TRACE_MAX_JUMPS) return 1;
+
+	//A loop: the next instruction is in the block already
+	for (i = 0; i < blocklen; i++)
+		if ((uae_u8*) pc_hist[i].location == next_pc_p) return 1;
+
+	//v18: follow a branch only while the block stays inside the range the
+	//soft flush checksum covers (pc_p ... pc_p + MAX_CHECKSUM_LEN). Before,
+	//a JMP abs in a library jump table (RAM) took the block into the
+	//function in the ROM or another library, megabytes away: such a block
+	//can not be checksummed and was thrown away at every soft flush. AmigaOS
+	//(68040) calls CacheClearU() often, so every block with a library call
+	//was translated again and again - the emulation stalled for a moment
+	//(mouse pointer lagging and jumping back, late clicks; switching
+	//"constant jumps" off helped). Blocks completely in the Kickstart ROM
+	//are never checksummed and may follow any branch.
+	{
+		uae_uintptr start = (uae_uintptr) pc_hist[0].location;
+		uae_uintptr next = (uae_uintptr) next_pc_p;
+
+		if (!(isinrom(start) && isinrom(next)))
+		{
+			if (next < start || next + LONGEST_68K_INST > start + MAX_CHECKSUM_LEN)
+			{
+				comp_trace_far_jumps++;
+				return 1;
+			}
+		}
+	}
+
+	return 0;
 }
 
 void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
@@ -583,6 +903,8 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 
 	//Clear previous compiling error
 	was_compile_error = FALSE;
+	comp_buffer_overflow = FALSE;
+	comp_block_totcycles = totcycles;
 
 #ifdef JIT_DEBUG_VERBOSE
 	write_jit_log("JIT: compile code, pc: %08x, block length: %d, total cycles: %d\n",
@@ -606,14 +928,17 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 		alloc_blockinfos();
 
 		bi = get_blockinfo_addr_new(pc_hist[0].location, FALSE);
+		if (!bi) return;	//v18: cache was flushed, compile next time
 
 		if (bi->handler)
 		{
 			if (bi != get_blockinfo(cl))
 			{
-				write_log("Block error: count=%d, %p %p\n", bi->count, bi->handler_to_use,
+				//v18: was abort(); start over with an empty cache
+				write_log("JIT: Block error: count=%d, %p %p - flushing the translation cache\n", bi->count, bi->handler_to_use,
 						cache_tags[cl].handler);
-				abort();
+				flush_icache_hard("block error");
+				return;
 			}
 		}
 
@@ -628,6 +953,12 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 		//Add the pointer to the fist compiled instruction as the beginning of the block
 		bi->pc_p = (uae_u8*) pc_hist[0].location;
 
+#ifdef FPUEMU
+		//v18 (TODO 7.3): constants of the translated FPU instructions
+		regs.jit_fpu_magic = 4503601774854144.0;	/* 2^52 + 2^31 */
+		regs.jit_fpu_zero = 0.0;
+#endif
+
 		//Initialize compiling
 		comp_init();
 
@@ -639,10 +970,12 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 #endif
 
 		//Compile prolog (stackframe preparing) to the buffer, saving non-volatile registers
-		comp_ppc_prolog(PPCR_REG_USED_NONVOLATILE);
+		comp_ppc_prolog(comp_nonvol_regs());
 
-		//Set up Regs pointer register
-		comp_ppc_liw(PPCR_REGS_BASE_MAPPED, (uae_u32) &regs);
+		//Set up Regs pointer register, baseaddr[], stub buffer (v18: fixed
+		//length; a chained block enters behind it, TODO 7.1)
+		comp_ppc_block_setup();
+		comp_chain_check_entry(compile_p_at_start);
 
 		//Compile verification of 68k PC against the expected PC and call
 		//cache miss function if these were not matching
@@ -684,8 +1017,9 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 				}
 			}
 
-			//Is this instruction supported? (handler is not NULL)
-			if (props->instr_handler != NULL)
+			//Is this instruction supported? (handler is not NULL; v18:
+			//FPU instructions depend on the extension word, TODO 7.3)
+			if (props->instr_handler != NULL && comp_fpu_compilable(opcode, pc_hist[i].location))
 			{
 				if (unsupported_in_a_row)
 				{
@@ -697,6 +1031,11 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 				unsupported_in_a_row = FALSE;
 				unsupported_only = FALSE;
 				last_supported_branch = ((props->specific & (COMPTBL_SPEC_ISJUMP | COMPTBL_SPEC_ISCONSTJUMP)) != 0);
+
+				//v18 (TODO 7.5): a branch that is not the last instruction
+				//continues on the recorded path, see comp_trace_end()
+				comp_trace_next = (i < blocklen - 1) ? &pc_hist[i + 1] : NULL;
+				comp_trace_exit_cycles = scaled_cycles((totcycles / blocklen) * (i + 1));
 
 				//Init opcode compiling
 				comp_opcode_init(inst_history, props->extension);
@@ -714,6 +1053,7 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 
 				//Unlock all the mapped temporary registers
 				comp_unlock_all_temp_registers();
+				comp_trace_next = NULL;
 			}
 			else
 			{
@@ -777,9 +1117,22 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 			comp_compiler_debug_dump_compiled();
 #endif
 
-			//Compile calling the do_cycles function at the end of the block with the pre-calculated cycles
-			comp_ppc_return_from_block(scaled_cycles(totcycles));
+			//Charge the pre-calculated cycles at the end of the block and
+			//continue with the next block (v18: chaining, TODO 7.1)
+			comp_ppc_block_exit(scaled_cycles(totcycles));
 
+			//v18: the fallback calls of the checked memory accesses behind the
+			//block code (TODO 5.15)
+			comp_memfb_emit_pending();
+
+			//v18: errors found while generating the code (branch
+			//scheduling, invalid operands, end of the code cache) were not
+			//checked here before: the block was installed anyway
+			comp_verify_block();
+		}
+
+		if ((!unsupported_only) && (!was_compile_error))
+		{
 			//PowerPC cache flush at the end of the compiling
 			ppc_cacheflush(compile_p_at_start, current_compile_p - compile_p_at_start);
 
@@ -829,15 +1182,22 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 
 			//Block start from compiling
 			bi->handler = bi->handler_to_use = (cpuop_func*) compile_p_at_start;
+			bi->code_end = current_compile_p;
 		}
 		else
 		{
-#ifdef JIT_DEBUG
 			if (was_compile_error)
 			{
-				//There was a compiling error
-				write_jit_log("Compiling of block 0x%08x has failed, falling back to interpretive\n", bi->pc_p);
-			} else {
+				//There was a compiling error (v18: logged in every build,
+				//the first ones fully, then every 1000th)
+				comp_error_blocks++;
+				if (comp_error_blocks <= 20 || (comp_error_blocks % 1000) == 0)
+					write_log("JIT: Compiling of block at %08x failed (%u so far), it runs in the interpreter\n",
+							(unsigned) pc_hist[0].pc, (unsigned) comp_error_blocks);
+			}
+#ifdef JIT_DEBUG
+			else
+			{
 				//Block of unsupported instructions: this block won't be compiled anymore,
 				//the execution jumps to execute it under interpretive all the time
 				write_jit_log("Block of unsupported instructions 0x%08x: not compiled\n", bi->pc_p);
@@ -855,6 +1215,24 @@ void compile_block(const cpu_history *pc_hist, int blocklen, int totcycles)
 
 		//Finished compiling, cleanup
 		comp_done();
+
+		//v18: the block did not fit into the rest of the code cache:
+		//start over with an empty cache, the block is translated again on
+		//one of its next executions. If it did not even fit into the empty
+		//cache (very long block, small cache), it stays interpreted -
+		//flushing again and again would only throw away all other blocks.
+		if (comp_buffer_overflow)
+		{
+			if (compile_p_at_start - compiled_code > (int) (MAX_HOLD_BI * sizeof(blockinfo) + 64))
+			{
+				write_log("JIT: Translation cache is full (block at %08x), flushing\n", (unsigned) pc_hist[0].pc);
+				flush_icache_hard("compiling - block does not fit");
+			}
+			else
+			{
+				write_log("JIT: Block at %08x is larger than the translation cache, it runs in the interpreter\n", (unsigned) pc_hist[0].pc);
+			}
+		}
 	}
 	else
 	{
@@ -935,8 +1313,11 @@ STATIC_INLINE comp_tmp_reg* comp_find_unlocked_temp_register(void)
 	if (found == -1)
 	{
 		//This must not happen: all temporary registers are mapped and locked
-		write_log("Error: JIT compiler ran out of temporary registers\n");
-		abort();
+		//(v18: was abort(); the block is not translated, the returned
+		//register only lets the compiling run to its end)
+		write_log("JIT: Compiling error: ran out of temporary registers\n");
+		comp_compile_error();
+		found = (last_unmapped_register + 1) % PPC_TMP_REGS_COUNT;
 	}
 
 	last_unmapped_register = found;
@@ -997,7 +1378,8 @@ comp_tmp_reg* comp_allocate_temp_register(struct m68k_register* allocate_for, co
 			reg = comp_find_unlocked_temp_register();
 
 			//Unmap the register and reuse the temporary register
-			comp_unmap_temp_register(reg->allocated_for);
+			//(after a compiling error it may not be mapped to a 68k register)
+			if (reg->allocated_for) comp_unmap_temp_register(reg->allocated_for);
 		}
 	}
 
@@ -1013,12 +1395,42 @@ comp_tmp_reg* comp_allocate_temp_register(struct m68k_register* allocate_for, co
 }
 
 /**
+ * v18: dependency masks of the macroblocks name a mapped 68k register
+ * either by its temporary register (COMP_COMPILER_MACROBLOCK_REG_TMP) or by
+ * the 68k register (COMP_COMPILER_MACROBLOCK_REG_DX/AX), and the optimizer
+ * treats them as different registers. Example: -(A4) decrements A4 with an
+ * AX(4) output, the memory read uses the address with a TMP input; a LEA
+ * to A4 later in the block made the decrement look unused and the
+ * optimizer removed it (the read used the old address). Called for the
+ * input and output mask of every macroblock: a temporary register that is
+ * mapped to a 68k register also stands for that 68k register.
+ */
+uae_u64 comp_mapped_reg_deps(uae_u64 regs)
+{
+	int i;
+
+	for (i = 0; i < PPC_TMP_REGS_COUNT + COMP_FIXREGS_COUNT; i++)
+	{
+		comp_tmp_reg* reg = &used_tmp_regs[i];
+		if ((regs & reg->reg_usage_mapping) && reg->allocated && reg->allocated_for != NULL
+			&& reg->allocated_for->tmpreg == reg)
+		{
+			regs |= COMP_COMPILER_MACROBLOCK_REG_DX_OR_AX(reg->allocated_for->regnum);
+		}
+	}
+	return regs;
+}
+
+/**
  * Free previously allocated temporary register
  * Parameters:
  *    temp_reg - index of the temporary register that needs to be free'd
  */
 void comp_free_temp_register(comp_tmp_reg* temp_reg)
 {
+	//v18 (TODO 7.4): a fixed 68k register stays mapped
+	if (comp_is_fixed_descriptor(temp_reg)) return;
+
 	if (!temp_reg->allocated)
 	{
 #ifdef JIT_DEBUG
@@ -1033,6 +1445,20 @@ void comp_free_temp_register(comp_tmp_reg* temp_reg)
 		}
 #endif
 
+		return;
+	}
+
+	//v18: a temporary register that is mapped to a 68k register must be
+	//unmapped (written back if it was changed). Releasing only the temporary
+	//register left the 68k register pointing to it: the next mapping of that
+	//68k register reused a free (and maybe meanwhile reallocated) PPC register
+	//that was never written back, even in later blocks. This happened with
+	//the direct memory access, which frees the source register of a memory
+	//write (LINK, PEA, MOVEM, ...): lost register changes and writes to
+	//wrong addresses.
+	if (temp_reg->allocated_for != NULL && temp_reg->allocated_for->tmpreg == temp_reg)
+	{
+		comp_unmap_temp_register(temp_reg->allocated_for);
 		return;
 	}
 
@@ -1071,6 +1497,31 @@ void comp_reset_temp_registers()
 				//can be released directly
 				comp_reset_tmp_register(reg);
 			}
+		}
+	}
+
+	//v18: no 68k register mapping may survive into the next block
+	for (i = 0; i < 16; i++)
+	{
+		comp_m68k_registers[i].tmpreg = NULL;
+		comp_m68k_registers[i].locked = FALSE;
+		comp_m68k_registers[i].needs_flush = FALSE;
+	}
+
+	//v18 (TODO 7.4): except the fixed ones, they are mapped all the time
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+	{
+		comp_tmp_reg* t = &used_tmp_regs[PPC_TMP_REGS_COUNT + i];
+		if (comp_fixregs_on)
+		{
+			struct m68k_register* r = &comp_m68k_registers[comp_fixregs_68k[i]];
+			t->allocated = TRUE;
+			t->allocated_for = r;
+			r->tmpreg = t;
+		}
+		else
+		{
+			comp_reset_tmp_register(t);
 		}
 	}
 }
@@ -1161,8 +1612,10 @@ comp_tmp_reg* comp_map_temp_register(uae_u8 reg_number, int needs_init, int need
 		//It is already mapped, but we need to make sure that if flush is
 		//requested for this mapping and wasn't for the previous mapping then
 		//still it will be done at the end
-		reg->needs_flush |= needs_flush;
+		//(v18: not for a fixed register, it stays in its PowerPC register)
 		temp_reg = reg->tmpreg;
+		if (!comp_is_fixed_descriptor(temp_reg))
+			reg->needs_flush |= needs_flush;
 	} else {
 		//Allocate a temp register for the mapping
 		temp_reg = comp_allocate_temp_register(reg, PPC_TMP_REG_NOTUSED_MAPPED);
@@ -1200,10 +1653,18 @@ comp_tmp_reg* comp_map_temp_register(uae_u8 reg_number, int needs_init, int need
  */
 void comp_swap_temp_register_mapping(comp_tmp_reg* tmpreg1, comp_tmp_reg* tmpreg2)
 {
+	if (comp_is_fixed_descriptor(tmpreg1) || comp_is_fixed_descriptor(tmpreg2))
+	{
+		write_log("JIT: Compiling error: temporary register swap on a fixed register\n");
+		comp_compile_error();
+		return;
+	}
+
 	if ((!tmpreg1->allocated) || (!tmpreg2->allocated))
 	{
-		write_log("ERROR: JIT temporary register swap on not mapped registers, reg1: %d, reg2: %d\n", tmpreg1, tmpreg2);
-		abort();
+		write_log("JIT: Compiling error: temporary register swap on not mapped registers\n");
+		comp_compile_error();
+		return;
 	}
 
 	//Swap M68K register structure pointers
@@ -1240,6 +1701,13 @@ comp_tmp_reg* comp_get_mapped_temp_register(uae_u8 reg_number)
  */
 void comp_unmap_temp_register(struct m68k_register* reg)
 {
+	//v18 (TODO 7.4): a fixed 68k register stays mapped
+	if (reg->tmpreg != NULL && comp_is_fixed_descriptor(reg->tmpreg))
+	{
+		reg->locked = FALSE;
+		return;
+	}
+
 	if (reg->tmpreg == NULL)
 	{
 		write_jit_log("Warning: Free'd M68k register %d is not mapped to a temp register\n", reg->regnum);
@@ -1286,11 +1754,13 @@ int comp_next_free_register_slot()
 	int slot = next_empty_register_slot++;
 
 	//Check for the available slots
-	if (slot == COMP_REGS_ALLOCATED_SLOTS)
+	if (slot >= COMP_REGS_ALLOCATED_SLOTS)
 	{
 		//Oops, we ran out of free slots
-		write_log("Compiling error: Out of free slots in the Regs structure, number of required slots: %d\n", slot);
-		abort();
+		write_log("JIT: Compiling error: Out of free slots in the Regs structure, number of required slots: %d\n", slot + 1);
+		comp_compile_error();
+		next_empty_register_slot = COMP_REGS_ALLOCATED_SLOTS;
+		slot = COMP_REGS_ALLOCATED_SLOTS - 1;
 	}
 
 	return slot;
@@ -1309,8 +1779,10 @@ int comp_last_register_slot()
 	if (slot < 0)
 	{
 		//Oops, stack underrun
-		write_log("Compiling error: requested for slot number for non-existing register slot\n");
-		abort();
+		write_log("JIT: Compiling error: requested for slot number for non-existing register slot\n");
+		comp_compile_error();
+		next_empty_register_slot = 0;
+		slot = 0;
 	}
 
 	return slot;
@@ -1487,6 +1959,8 @@ STATIC_INLINE blockinfo* get_blockinfo_addr_new(void* addr, int setstate)
 				hold_bi[i] = NULL;
 				bi->pc_p = addr;
 				bi->prev = bi->next = NULL;
+				bi->code_end = NULL;
+				bi->memfb_recompiles = 0;
 				invalidate_block(bi);
 				add_to_active(bi);
 				add_to_cl_list(bi);
@@ -1495,8 +1969,9 @@ STATIC_INLINE blockinfo* get_blockinfo_addr_new(void* addr, int setstate)
 	}
 	if (!bi)
 	{
-		write_log("JIT: Looking for blockinfo, can't find free one\n");
-		abort();
+		//v18: was abort()
+		write_log("JIT: Looking for blockinfo, can't find free one - flushing the translation cache\n");
+		flush_icache_hard("no free blockinfo");
 	}
 
 	return bi;
@@ -1541,8 +2016,10 @@ static void cache_miss(void)
 	}
 	if (!bi2 || bi == bi2)
 	{
-		write_log("JIT: Unexplained cache miss %p %p\n", bi, bi2);
-			abort();
+		//v18: was abort(); start over with an empty cache
+		write_log("JIT: Unexplained cache miss %p %p - flushing the translation cache\n", bi, bi2);
+		flush_icache_hard("unexplained cache miss");
+		return;
 	}
 	raise_in_cl_list(bi);
 	return;
@@ -1720,8 +2197,8 @@ int comp_is_spec_memory_write_long(uae_u32 pc, int specmem_flags)
  */
 void comp_not_implemented(uae_u16 opcode)
 {
-	write_log("Compiling error: instruction or addressing mode is not implemented, but marked as implemented: 0x%04x\n", opcode);
-	abort();
+	write_log("JIT: Compiling error: instruction or addressing mode is not implemented, but marked as implemented: 0x%04x\n", opcode);
+	comp_compile_error();
 }
 
 /** ------------------------------------------------------------------------------
@@ -1737,9 +2214,20 @@ void* comp_ppc_buffer_top()
 	return current_compile_p;
 }
 
-/* Pushes a word to the code cache and updates the pointer */
+/* Pushes a word to the code cache and updates the pointer
+ * v18: never writes past the end of the buffer. A block that does not fit
+ * is aborted (see comp_buffer_overflow in compile_block()). */
 void comp_ppc_emit_word(uae_u32 word)
 {
+	if (current_compile_p + 4 > comp_emit_limit)
+	{
+		if (!comp_buffer_overflow)
+		{
+			comp_buffer_overflow = TRUE;
+			comp_compile_error();
+		}
+		return;
+	}
 	*((uae_u32*) current_compile_p) = word;
 	current_compile_p += 4;
 }
@@ -1827,9 +2315,9 @@ void comp_ppc_addi(comp_ppc_reg regd, comp_ppc_reg rega, uae_u16 imm)
 	//Parameter validation
 	if (rega.r == 0)
 	{
-		write_log(
-				"JIT compiling error: r0 register cannot be used for source register in addi instruction");
-		abort();
+		write_log("JIT: Compiling error: r0 register cannot be used for source register in addi instruction\n");
+		comp_compile_error();
+		return;
 	}
 
 	// ## addi regd, rega, imm
@@ -1847,9 +2335,9 @@ void comp_ppc_addis(comp_ppc_reg regd, comp_ppc_reg rega, uae_u16 imm)
 	//Parameter validation
 	if (rega.r == 0)
 	{
-		write_log(
-				"Compiling error: r0 register cannot be used for source register in addis instruction");
-		abort();
+		write_log("JIT: Compiling error: r0 register cannot be used for source register in addis instruction\n");
+		comp_compile_error();
+		return;
 	}
 
 	// ## addis regd, rega, imm
@@ -1931,19 +2419,30 @@ void comp_ppc_b(uae_u32 target, int reference)
  */
 void comp_ppc_branch_target(int reference)
 {
-	if (reference >= MAX_BRANCH_SCHEDULE)
+	if (reference < 0 || reference >= MAX_BRANCH_SCHEDULE)
 	{
 		//This must not happen, bailing out
-		write_log("Compiling error: branch reference number is higher than MAX_BRANCH_SCHEDULE\n");
-		abort();
+		write_log("JIT: Compiling error: branch reference number is higher than MAX_BRANCH_SCHEDULE\n");
+		comp_compile_error();
+		return;
+	}
+
+	//v18: after the end of the code cache was reached nothing is
+	//written any more (the recorded addresses may lie behind the buffer)
+	if (comp_buffer_overflow)
+	{
+		compiled_branch_instruction[reference].address = NULL;
+		compiled_branch_target[reference] = NULL;
+		return;
 	}
 
 	//Is there an already scheduled target?
 	if (compiled_branch_target[reference] != NULL)
 	{
 		//Yes, this must not happen
-		write_log("Compiling error: branch target was already scheduled, scheduled branch target address: 0x%08x, new branch target address: 0x%08x\n", compiled_branch_instruction[reference], current_compile_p);
-		abort();
+		write_log("JIT: Compiling error: branch target was already scheduled, scheduled branch target address: %p, new branch target address: %p\n", compiled_branch_target[reference], current_compile_p);
+		comp_compile_error();
+		return;
 	}
 
 	//Is there a previously scheduled branch instruction?
@@ -1964,10 +2463,10 @@ void comp_ppc_branch_target(int reference)
 		else
 		{
 			//Target is too far a way, bailing out
-			write_log(
-					"Compiling error: at branch target scheduling target is too far from the instruction, distance: %08x\n",
+			write_log("JIT: Compiling error: at branch target scheduling target is too far from the instruction, distance: %08x\n",
 					offset);
-			abort();
+			comp_compile_error();
+			compiled_branch_instruction[reference].address = NULL;
 		}
 	}
 	else
@@ -1998,6 +2497,16 @@ void comp_ppc_bctr()
 	comp_ppc_emit_word(0x4e800420);
 }
 
+/* Compiles bctrl instruction
+ * Parameters:
+ * 		none
+ */
+void comp_ppc_bctrl()
+{
+	// ## bctrl
+	comp_ppc_emit_word(0x4e800421);
+}
+
 /**
  * Schedule the specified branch opcode for a branch target.
  * Parameters:
@@ -2007,19 +2516,29 @@ void comp_ppc_bctr()
  */
 STATIC_INLINE void helper_schedule_branch(uae_u32 opcode, int reference, BOOL is_16bit_instruction)
 {
-	if (reference >= MAX_BRANCH_SCHEDULE)
+	if (reference < 0 || reference >= MAX_BRANCH_SCHEDULE)
 	{
 		//This must not happen, bailing out
-		write_log("Compiling error: branch reference number is higher than MAX_BRANCH_SCHEDULE\n");
-		abort();
+		write_log("JIT: Compiling error: branch reference number is higher than MAX_BRANCH_SCHEDULE\n");
+		comp_compile_error();
+		return;
+	}
+
+	//v18: see comp_ppc_branch_target()
+	if (comp_buffer_overflow)
+	{
+		compiled_branch_instruction[reference].address = NULL;
+		compiled_branch_target[reference] = NULL;
+		return;
 	}
 
 	//Is there a scheduled branch instruction already?
 	if (compiled_branch_instruction[reference].address != NULL)
 	{
 		//This must not happen, bailing out
-		write_log("Compiling error: branch instruction was already scheduled\n");
-		abort();
+		write_log("JIT: Compiling error: branch instruction was already scheduled\n");
+		comp_compile_error();
+		return;
 	}
 
 	//Is there a target already available?
@@ -2041,8 +2560,9 @@ STATIC_INLINE void helper_schedule_branch(uae_u32 opcode, int reference, BOOL is
 		else
 		{
 			//Target is too far a way, bailing out
-			write_log("Compiling error: at branch instruction compiling target is too far from the instruction, distance: %08x\n", offset);
-			abort();
+			write_log("JIT: Compiling error: at branch instruction compiling target is too far from the instruction, distance: %08x\n", offset);
+			comp_compile_error();
+			compiled_branch_target[reference] = NULL;
 		}
 	}
 	else
@@ -2303,24 +2823,38 @@ void comp_ppc_lwzx(comp_ppc_reg regd, comp_ppc_reg rega, comp_ppc_reg regb)
 /* Compiles mcrxr instruction
  * Parameters:
  * 		crreg - target flag register
+ * v18: chosen at run time (comp_ppc_native_mcrxr, see
+ * ppc_cpu_native_mcrxr() in od-amiga/memory.c) instead of at compile time
+ * (_ARCH_PWR4): mcrxr only on the 60x/G3/G4, everywhere else the replacement.
+ * The replacement uses r0 (PPCR_SPECTMP) - as the PWR4 variant did before.
  */
 void comp_ppc_mcrxr(int crreg)
 {
-	// ## mcrxr crreg
-#ifdef _ARCH_PWR4
-	// Rotate the XER bits into the right slot in the temp register.
+	if (comp_ppc_native_mcrxr)
+	{
+		// ## mcrxr crreg
+		comp_ppc_emit_word(0x7c000400 | (crreg << 23));
+		return;
+	}
+
+	// Rotate the XER bits (SO, OV, CA) into the field of the CR register
 	comp_ppc_mfxer(PPCR_SPECTMP_MAPPED);
-	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (4*(8-crreg)), 0, 31, FALSE);
-	// Copy to that CR field.
-	// Our mt(o)crf mask is based on the condreg we're after. 128 = cr0
+	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (32 - 4 * crreg) & 31, 0, 31, FALSE);
+	// Copy to that CR field
 	comp_ppc_mtcrf(crreg, PPCR_SPECTMP_MAPPED);
-	// Now rotate back and clear out the XER fields we need to erase.
-	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (32-(4*(8-crreg))), 4, 31, FALSE);
-	// And do the write back to the XER
+	// Rotate back and clear the XER bits, as mcrxr does
+	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (4 * crreg) & 31, 4, 31, FALSE);
 	comp_ppc_mtxer(PPCR_SPECTMP_MAPPED);
-#else
-	comp_ppc_emit_word(0x7c000400 | (crreg << 23));
-#endif
+}
+
+/**
+ * v18: CPU features detected at run time
+ */
+void comp_ppc_detect_cpu(void)
+{
+	//The OS specific part lives next to cache_alloc() (od-amiga/memory.c)
+	comp_ppc_native_mcrxr = ppc_cpu_native_mcrxr() ? TRUE : FALSE;
+	comp_ppc_has_fpu = ppc_cpu_has_fpu() ? TRUE : FALSE;
 }
 
 /* Compiles mfcr instruction
@@ -2332,19 +2866,6 @@ void comp_ppc_mfcr(comp_ppc_reg reg)
 	// ## mfcr reg
 	comp_ppc_emit_word(0x7c000026 | (reg.r << 21));
 }
-
-#ifdef _ARCH_PWR4
-/* Compiles mf(o)crf instruction
- * Parameters:
- * 		crreg - source flag register
- * 		reg - target register
- */
-void comp_ppc_mfocrf(int crreg, comp_ppc_reg reg)
-{
-	// ## mf(o)crf reg
-	comp_ppc_emit_word(0x7c100026 | (reg.r << 21) | (1 << (7 - crreg + 12)));
-}
-#endif
 
 /* Compiles mflr instruction
  * Parameters:
@@ -2374,11 +2895,19 @@ void comp_ppc_mfxer(comp_ppc_reg reg)
 void comp_ppc_mtcrf(int crreg, comp_ppc_reg regf)
 {
 	// ## mtcrf reg
-#ifdef _ARCH_PWR4
-	comp_ppc_emit_word(0x7c100120 | (regf.r << 21) | (1 << (7 - crreg + 12)));
-#else
+	// v18: always the classic form; mtocrf (PWR4 builds) is not defined
+	// on the G3/G4
 	comp_ppc_emit_word(0x7c000120 | (regf.r << 21) | (1 << (7 - crreg + 12)));
-#endif
+}
+
+/* Compiles mtcrf 0xff instruction (all CR fields)
+ * Parameters:
+ * 		regf - register containing the flags
+ */
+void comp_ppc_mtcr(comp_ppc_reg regf)
+{
+	// ## mtcrf 0xff, reg
+	comp_ppc_emit_word(0x7c000120 | (regf.r << 21) | (0xff << 12));
 }
 
 /* Compiles mtctr instruction
@@ -2941,9 +3470,12 @@ void comp_ppc_prolog(uae_u32 save_regs)
 	for(i = 0; i < 32; i++) regnum += (save_regs & (1 << i)) ? 1 : 0;
 
 	comp_ppc_mflr(PPCR_TMP0_MAPPED); //Read LR
-	comp_ppc_stw(PPCR_TMP0_MAPPED, -4, PPCR_SP_MAPPED); //Store in stack frame
+	//v18: LR save word of the caller's frame (4(r1)) as the SysV ABI
+	//defines it; was -4(r1), below the stack pointer
+	comp_ppc_stw(PPCR_TMP0_MAPPED, 4, PPCR_SP_MAPPED);
 
-	comp_ppc_addi(PPCR_TMP0_MAPPED, PPCR_SP_MAPPED, -16 - (regnum * 4)); //Calculate new stack frame
+	//v18: 4 more bytes for the condition register behind the registers
+	comp_ppc_addi(PPCR_TMP0_MAPPED, PPCR_SP_MAPPED, -20 - (regnum * 4)); //Calculate new stack frame
 	comp_ppc_rlwinm(PPCR_TMP0_MAPPED, PPCR_TMP0_MAPPED, 0, 0, 27, FALSE); //Align stack pointer
 	comp_ppc_stw(PPCR_SP_MAPPED, 0, PPCR_TMP0_MAPPED); //Store backchain pointer
 	comp_ppc_mr(PPCR_SP_MAPPED, PPCR_TMP0_MAPPED, FALSE); //Set real stack pointer
@@ -2958,6 +3490,11 @@ void comp_ppc_prolog(uae_u32 save_regs)
 			regnum += 4;
 		}
 	}
+
+	//v18: save CR - CR2-CR4 are non-volatile in the SysV ABI, the
+	//translated code changes CR2 (mcrxr, flag handling)
+	comp_ppc_mfcr(PPCR_TMP0_MAPPED);
+	comp_ppc_stw(PPCR_TMP0_MAPPED, regnum, PPCR_SP_MAPPED);
 }
 #else
 //Prolog for MacOSX Darwin ABI
@@ -3011,8 +3548,12 @@ void comp_ppc_epilog(uae_u32 restore_regs)
 		}
 	}
 
+	//v18: restore CR2-CR4 (non-volatile, see comp_ppc_prolog())
+	comp_ppc_lwz(PPCR_SPECTMP_MAPPED, regnum, PPCR_SP_MAPPED);
+	comp_ppc_emit_word(0x7c000120 | (PPCR_SPECTMP << 21) | (0x38 << 12));	//mtcrf 0x38,r0
+
 	comp_ppc_lwz(PPCR_SP_MAPPED, 0, PPCR_SP_MAPPED); //Read the pointer to the previous stack frame and free up stack space by using the backchain pointer
-	comp_ppc_lwz(PPCR_SPECTMP_MAPPED, -4, PPCR_SP_MAPPED); //Read LR from the stackframe
+	comp_ppc_lwz(PPCR_SPECTMP_MAPPED, 4, PPCR_SP_MAPPED); //Read LR from the caller's frame (v18: was -4)
 	comp_ppc_mtlr(PPCR_SPECTMP_MAPPED); //Restore LR
 }
 #else
@@ -3048,6 +3589,10 @@ void comp_ppc_epilog(uae_u32 restore_regs)
  * Note: this function generates macroblocks, must be called from the macroblock
  * collection phase.
  */
+/* v18: stack frame size for comp_ppc_save_temp_regs(): back chain, LR save
+ * word, the registers, rounded up to 16 bytes */
+#define COMP_SAVE_TEMPS_FRAME_SIZE(n) ((8 + (n) * 4 + 15) & ~15)
+
 uae_u32 comp_ppc_save_temp_regs(uae_u32 exceptions)
 {
 	uae_u32 saved_regs = 0;
@@ -3066,13 +3611,13 @@ uae_u32 comp_ppc_save_temp_regs(uae_u32 exceptions)
 		}
 	}
 
-	//Adjust stack pointer: allocate the space for the registers
-	comp_macroblock_push_add_register_imm(
-			COMP_COMPILER_MACROBLOCK_REG_NONE,
-			COMP_COMPILER_MACROBLOCK_REG_NONE | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
-			PPCR_SP_MAPPED,
-			PPCR_SP_MAPPED,
-			-count * 4);
+	//Allocate a stack frame for the registers.
+	//v18: a real SysV frame (back chain at 0, LR save word at 4 for the
+	//called function, size a multiple of 16). Before, the stack pointer was
+	//only lowered by count * 4 and the registers were stored from 0(r1): the
+	//called function stored its return address in 4(r1) and overwrote the
+	//second saved register, and the stack was not 16 byte aligned.
+	comp_macroblock_push_stack_frame_alloc(COMP_SAVE_TEMPS_FRAME_SIZE(count));
 
 	//Walk through the list of registers again and save the marked ones
 	count = 0;
@@ -3086,7 +3631,7 @@ uae_u32 comp_ppc_save_temp_regs(uae_u32 exceptions)
 					COMP_COMPILER_MACROBLOCK_REG_NONE | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
 					PPCR_MAPPED_REG(reg),
 					PPCR_SP_MAPPED,
-					count * 4);
+					8 + count * 4);
 			count++;
 		}
 	}
@@ -3116,18 +3661,13 @@ void comp_ppc_restore_temp_regs(uae_u32 saved_regs)
 			COMP_COMPILER_MACROBLOCK_REG_NONE | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
 			PPCR_MAPPED_REG(reg),
 					PPCR_SP_MAPPED,
-					count * 4);
+					8 + count * 4);
 			count++;
 		}
 	}
 
-	//Adjust stack pointer: free up the space
-	comp_macroblock_push_add_register_imm(
-			COMP_COMPILER_MACROBLOCK_REG_NONE,
-			COMP_COMPILER_MACROBLOCK_REG_NONE | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
-			PPCR_SP_MAPPED,
-			PPCR_SP_MAPPED,
-			count * 4);
+	//Free the stack frame (see comp_ppc_save_temp_regs())
+	comp_macroblock_push_stack_frame_free(COMP_SAVE_TEMPS_FRAME_SIZE(count));
 }
 
 /* Compiles a static do_cycles function call with the specified number of CPU cycles
@@ -3170,11 +3710,8 @@ void comp_ppc_verify_pc(uae_u8* pc_addr_exp)
 	comp_ppc_bc(PPC_B_CR_TMP0_EQ, 0);	//beq skip
 
 	//PC is not the same as the cached
-	//Dispose stack frame
-	comp_ppc_epilog(PPCR_REG_USED_NONVOLATILE);
-
-	//Continue on cache miss function
-	comp_ppc_jump((uae_u32) cache_miss);
+	//Dispose stack frame and continue on cache miss function
+	comp_ppc_leave_to((uae_uintptr) cache_miss);
 
 	//skip:
 	comp_ppc_branch_target(0);
@@ -3200,7 +3737,7 @@ void comp_ppc_return_from_block(int cycles)
 	comp_ppc_do_cycles(cycles);
 
 	//Return to the caller from the compiled block, restore non-volatile registers
-	comp_ppc_return_to_caller(PPCR_REG_USED_NONVOLATILE);
+	comp_ppc_return_to_caller(comp_nonvol_regs());
 }
 
 /* Compiles an exception routine call
@@ -3216,6 +3753,9 @@ void comp_ppc_exception(uae_u8 level, comp_exception_data* exception_data)
 	//Save flags
 	comp_ppc_save_flags();
 
+	//v18 (TODO 7.4): the fixed 68k registers too
+	comp_fixregs_emit_store();
+
 	//Call the exception handler
 	//Parameters: R3 - exception level, R4 - Regs structure address, R5 - triggering instruction address
 	comp_ppc_li(PPCR_PARAM1_MAPPED, level);
@@ -3223,13 +3763,16 @@ void comp_ppc_exception(uae_u8 level, comp_exception_data* exception_data)
 	comp_ppc_liw(PPCR_PARAM3_MAPPED, exception_data->next_address);
 	comp_ppc_call(PPCR_SPECTMP_MAPPED, (uae_uintptr) Exception);
 
+	//The exception changed the stack pointer and the status register
+	comp_fixregs_emit_load();
+
 	//Compile returning from the block to the current position
-	//The amount of spent processor cycles is static: it is too complicated to calculate it for
-	//the partial block and also take account of the time for the exception too.
-	//Let's say this is an awesomely fast Motorola processor and it takes only
-	//a few processor cycles to trigger the exception, so together with the rest
-	//of the block it will be executed in 50000 normal hardware cycles.
-	comp_ppc_return_from_block(scaled_cycles(50000));
+	//v18: the cycles of the whole block (as counted by the interpreter
+	//before the block was translated) are charged, the same amount as when
+	//the block runs to its end. Before, a flat 50000 cycles were charged, far
+	//more than the block takes: each exception (e.g. a division by zero)
+	//held the CPU back by that much against the chipset.
+	comp_ppc_block_exit(scaled_cycles(comp_block_totcycles));
 }
 
 /* Compiles store instructions for each 68k register in the list
@@ -3314,6 +3857,11 @@ int comp_signed_divide_64_bit(uae_s32 divisor,  uae_u32 dividend_high_regnum, ua
 
 	uae_s64 dividend64 = ((uae_s64)(uae_s32)regs.regs[dividend_high_regnum]) << 32 | regs.regs[dividend_low_regnum];
 
+	//v18: 0x8000000000000000 / -1 overflows the host division (undefined
+	//behaviour in C); the 68k result is an overflow anyway
+	if (divisor64 == -1 && dividend64 == (uae_s64) UVAL64(0x8000000000000000))
+		return 1;
+
 	quotient64 = dividend64 / divisor64;
 
 	int overflow = ((quotient64 & UVAL64(0xffffffff80000000)) != 0
@@ -3358,4 +3906,640 @@ int comp_unsigned_divide_64_bit(uae_u32 divisor, uae_u32 dividend_high_regnum, u
 	}
 
 	return overflow;
+}
+
+/** ------------------------------------------------------------------------------
+ * v18: checked direct memory access
+ *
+ * A memory access that the interpreter saw going to RAM (or that the
+ * comp_trust settings declare direct) is translated as a direct host memory
+ * access: host address = baseaddr[bank] + 68k address. For special banks
+ * (custom chips, CIA, unmapped areas, ...) baseaddr[] holds the address of
+ * the addrbank structure plus 1 (bit 0 set, see put_mem_bank()). Before, the
+ * translated code did not check that bit: when a pointer changed later and
+ * the access went to such a bank at run time, the code wrote into (or read
+ * from) the addrbank structure and the memory behind it - a crash of the
+ * whole emulator. Now the code tests bit 0 and, if set, calls the fallback
+ * stub, which performs the access through the bank handlers like the
+ * interpreter does.
+ *
+ * The stub saves all volatile registers (r3-r12), the registers the JIT may
+ * use as temporaries r14-r18, LR, CR and XER, and calls comp_memfb_fallback()
+ * with a pointer to the saved registers and a descriptor in r0 (see the
+ * COMP_MEMFB_* constants): bits 0-4 data register, 5-9 address register,
+ * 10-12 size, 13 write, 14 sign extended word. Reads write the result into
+ * the saved data register, which the stub restores.
+ *
+ * Stack frame of the stub (128 bytes, 16 byte aligned):
+ *    0 back chain, 4 LR save word of the called function,
+ *    8..47 r3-r12, 48..67 r14-r18, 68..107 r21-r30 (v18 TODO 7.4: the
+ *    fixed 68k registers), 108 LR, 112 CR, 116 XER
+ */
+#define COMP_MEMFB_FRAME	128
+#define COMP_MEMFB_OFF_LR	108
+#define COMP_MEMFB_OFF_CR	112
+#define COMP_MEMFB_OFF_XER	116
+
+static uae_u32 comp_memfb_count = 0;
+static uae_u8 comp_memfb_scratch_buf[160];
+
+/* Index of a register in the saved register area of the stub, or -1
+ * (v18 TODO 7.4: also r21-r30, the fixed 68k registers) */
+STATIC_INLINE int comp_memfb_slot(int reg)
+{
+	if (reg >= 3 && reg <= 12) return reg - 3;
+	if (reg >= 14 && reg <= 18) return reg - 4;
+	if (reg >= 21 && reg <= 30) return reg - 6;
+	return -1;
+}
+
+BOOL comp_memfb_reg_ok(int reg)
+{
+	return comp_memfb_slot(reg) >= 0;
+}
+
+uae_uintptr comp_memfb_stub(void)
+{
+	return (uae_uintptr) comp_memfb_stub_code;
+}
+
+/* 16 byte aligned scratch area: target of a direct address mapping (MOVEM,
+ * MOVE16) that turned out to point into a special bank. MOVEM accesses up to
+ * 64 bytes below (predecrement) or above the mapped address. */
+uae_u8* comp_memfb_scratch(void)
+{
+	return (uae_u8*) ((((uae_uintptr) comp_memfb_scratch_buf) + 64 + 15) & ~((uae_uintptr) 15));
+}
+
+/* v18 (TODO 5.18): a direct access that hits a special bank again and
+ * again (e.g. a loop over chip registers translated as plain RAM access)
+ * costs a fallback call every time. The hits are counted per access site
+ * (return address of the fallback call); after COMP_MEMFB_RECOMPILE_HITS
+ * the block is translated again: the interpreter runs it once and records
+ * the special accesses in the history, so the new translation uses the
+ * bank handlers for that instruction. At most COMP_MEMFB_MAX_RECOMPILES
+ * times per block. */
+#define COMP_MEMFB_SITES 1024
+#define COMP_MEMFB_RECOMPILE_HITS 256
+#define COMP_MEMFB_MAX_RECOMPILES 4
+static struct { uae_u8* site; uae_u32 hits; } comp_memfb_sites[COMP_MEMFB_SITES];
+static uae_u32 comp_memfb_recompiled;
+
+static blockinfo* comp_memfb_find_block(blockinfo* list, uae_u8* site)
+{
+	blockinfo* bi;
+	for (bi = list; bi; bi = bi->next)
+		if (bi->handler && (uae_u8*) bi->handler <= site && site < bi->code_end)
+			return bi;
+	return NULL;
+}
+
+static void comp_memfb_count_site(uae_u8* site)
+{
+	uae_u32 h = (((uae_uintptr) site) >> 2) & (COMP_MEMFB_SITES - 1);
+	blockinfo* bi;
+
+	if (comp_memfb_sites[h].site != site)
+	{
+		comp_memfb_sites[h].site = site;
+		comp_memfb_sites[h].hits = 0;
+	}
+	if (++comp_memfb_sites[h].hits < COMP_MEMFB_RECOMPILE_HITS)
+		return;
+	comp_memfb_sites[h].site = NULL;
+
+	bi = comp_memfb_find_block(active, site);
+	if (!bi) bi = comp_memfb_find_block(dormant, site);
+	if (!bi || bi->memfb_recompiles >= COMP_MEMFB_MAX_RECOMPILES)
+		return;
+
+	//The running code stays in the buffer until the next flush; the next
+	//entry of the block goes to the interpreter and translates it again
+	bi->memfb_recompiles++;
+	invalidate_block(bi);
+	raise_in_cl_list(bi);
+	comp_memfb_recompiled++;
+	if (comp_memfb_recompiled <= 10 || (comp_memfb_recompiled % 1000) == 0)
+		write_log("JIT: block at %p translated again: its direct memory accesses hit special banks (%u so far)\n",
+				(void*) bi->pc_p, (unsigned) comp_memfb_recompiled);
+}
+
+void comp_memfb_fallback(uae_u32* slots, uae_u32 desc)
+{
+	int datareg = comp_memfb_slot(desc & 31);
+	int addrreg = comp_memfb_slot((desc >> 5) & 31);
+	uaecptr addr;
+	uae_u32 value;
+
+	if (datareg < 0 || addrreg < 0)
+		return;		//cannot happen: checked at compiling (comp_memfb_reg_ok)
+
+	addr = slots[addrreg];
+
+	comp_memfb_count++;
+	comp_memfb_count_site((uae_u8*) slots[(COMP_MEMFB_OFF_LR - 8) / 4]);
+	if (comp_memfb_count <= 10 || (comp_memfb_count % 1000000) == 0)
+		write_log("JIT: direct memory access hit a special bank: %s %08x (%u so far), handled by the bank\n",
+				(desc & COMP_MEMFB_WRITE) ? "write to" : "read from", (unsigned) addr, (unsigned) comp_memfb_count);
+
+	if (desc & COMP_MEMFB_WRITE)
+	{
+		value = slots[datareg];
+		switch ((desc >> 10) & 7)
+		{
+		case COMP_MEMFB_SIZE_BYTE: put_byte(addr, value); break;
+		case COMP_MEMFB_SIZE_WORD: put_word(addr, value); break;
+		default:                   put_long(addr, value); break;
+		}
+	}
+	else
+	{
+		switch ((desc >> 10) & 7)
+		{
+		case COMP_MEMFB_SIZE_BYTE: value = get_byte(addr) & 0xff; break;
+		case COMP_MEMFB_SIZE_WORD:
+			value = get_word(addr) & 0xffff;
+			if (desc & COMP_MEMFB_SIGNEXT) value = (uae_u32) (uae_s32) (uae_s16) value;
+			break;
+		default:                   value = get_long(addr); break;
+		}
+		slots[datareg] = value;
+	}
+}
+
+/* Generates the fallback stub into its own executable buffer */
+static BOOL comp_memfb_create_stub(void)
+{
+	uae_u8* save_p = current_compile_p;
+	uae_u8* save_limit = comp_emit_limit;
+	BOOL save_error = was_compile_error;
+	BOOL save_overflow = comp_buffer_overflow;
+	BOOL ok;
+	int i;
+
+	if (comp_memfb_stub_code)
+		return TRUE;
+
+	comp_memfb_stub_code = cache_alloc(COMP_STUB_BUFFER_BYTES);
+	if (!comp_memfb_stub_code)
+		return FALSE;
+
+	current_compile_p = comp_memfb_stub_code;
+	comp_emit_limit = comp_memfb_stub_code + COMP_MEMFB_STUB_BYTES;
+	was_compile_error = FALSE;
+	comp_buffer_overflow = FALSE;
+
+	//Stack frame, save the registers
+	comp_ppc_stwu(PPCR_SP_MAPPED, (uae_u16) -COMP_MEMFB_FRAME, PPCR_SP_MAPPED);
+	for (i = 3; i <= 30; i++)
+		if (comp_memfb_slot(i) >= 0)
+			comp_ppc_stw(PPCR_MAPPED_REG(i), 8 + comp_memfb_slot(i) * 4, PPCR_SP_MAPPED);
+	comp_ppc_mflr(PPCR_PARAM1_MAPPED);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_LR, PPCR_SP_MAPPED);
+	comp_ppc_mfcr(PPCR_PARAM1_MAPPED);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_CR, PPCR_SP_MAPPED);
+	comp_ppc_mfxer(PPCR_PARAM1_MAPPED);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_XER, PPCR_SP_MAPPED);
+
+	//comp_memfb_fallback(saved registers, descriptor from r0)
+	comp_ppc_addi(PPCR_PARAM1_MAPPED, PPCR_SP_MAPPED, 8);
+	comp_ppc_mr(PPCR_PARAM2_MAPPED, PPCR_SPECTMP_MAPPED, FALSE);
+	comp_ppc_call(PPCR_MAPPED_REG(11), (uae_uintptr) comp_memfb_fallback);
+
+	//Restore everything (the result of a read is in the saved data register)
+	comp_ppc_lwz(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_XER, PPCR_SP_MAPPED);
+	comp_ppc_mtxer(PPCR_PARAM1_MAPPED);
+	comp_ppc_lwz(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_CR, PPCR_SP_MAPPED);
+	comp_ppc_mtcr(PPCR_PARAM1_MAPPED);
+	comp_ppc_lwz(PPCR_PARAM1_MAPPED, COMP_MEMFB_OFF_LR, PPCR_SP_MAPPED);
+	comp_ppc_mtlr(PPCR_PARAM1_MAPPED);
+	for (i = 3; i <= 30; i++)
+		if (comp_memfb_slot(i) >= 0)
+			comp_ppc_lwz(PPCR_MAPPED_REG(i), 8 + comp_memfb_slot(i) * 4, PPCR_SP_MAPPED);
+	comp_ppc_addi(PPCR_SP_MAPPED, PPCR_SP_MAPPED, COMP_MEMFB_FRAME);
+	comp_ppc_blr();
+
+	ok = !was_compile_error;
+	if (ok)
+		ppc_cacheflush(comp_memfb_stub_code, current_compile_p - comp_memfb_stub_code);
+
+	current_compile_p = save_p;
+	comp_emit_limit = save_limit;
+	was_compile_error = save_error;
+	comp_buffer_overflow = save_overflow;
+
+	if (!ok)
+	{
+		cache_free(comp_memfb_stub_code);
+		comp_memfb_stub_code = NULL;
+	}
+	return ok;
+}
+
+#ifdef PPCR_MEMFB
+/* v18: the fallback calls of the checked accesses are collected and
+ * emitted behind the block code (TODO 5.15): the access itself is then
+ * "bne cr7,fallback" plus the direct access, the fallback is
+ * "mtctr r20; li r0,desc; bctrl; b back" (r20 = stub address). */
+#define COMP_MEMFB_PENDING_MAX 4096
+static struct { uae_u8* bne; uae_u8* back; uae_u32 desc; } comp_memfb_pending[COMP_MEMFB_PENDING_MAX];
+static int comp_memfb_pending_count;
+
+void comp_memfb_pending_reset(void)
+{
+	comp_memfb_pending_count = 0;
+}
+
+void comp_memfb_branch(void)
+{
+	if (comp_memfb_pending_count >= COMP_MEMFB_PENDING_MAX)
+	{
+		write_log("JIT: Compiling error: too many checked memory accesses in a block\n");
+		comp_compile_error();
+		return;
+	}
+	comp_memfb_pending[comp_memfb_pending_count].bne = current_compile_p;
+	comp_ppc_emit_word(0x40000000 | (0x009E << 16));	//bne cr7,(patched later), PPC_B_CR7_NE
+}
+
+void comp_memfb_back(uae_u32 desc)
+{
+	if (comp_memfb_pending_count >= COMP_MEMFB_PENDING_MAX) return;
+	comp_memfb_pending[comp_memfb_pending_count].back = current_compile_p;
+	comp_memfb_pending[comp_memfb_pending_count].desc = desc;
+	comp_memfb_pending_count++;
+}
+
+void comp_memfb_emit_pending(void)
+{
+	int i;
+
+	for (i = 0; i < comp_memfb_pending_count && !comp_buffer_overflow; i++)
+	{
+		uae_u32 off = (uae_u32) current_compile_p - (uae_u32) comp_memfb_pending[i].bne;
+		if (off >= 0x8000)
+		{
+			write_log("JIT: Compiling error: block too long for the memory fallback branches\n");
+			comp_compile_error();
+			break;
+		}
+		*((uae_u32*) comp_memfb_pending[i].bne) |= off & 0xfffc;
+		comp_ppc_mtctr(PPCR_MEMFB_MAPPED);
+		comp_ppc_li(PPCR_SPECTMP_MAPPED, (uae_u16) comp_memfb_pending[i].desc);
+		comp_ppc_bctrl();
+		comp_ppc_b((uae_u32) (comp_memfb_pending[i].back - current_compile_p) & 0x3fffffc, 0);
+	}
+	comp_memfb_pending_count = 0;
+}
+#else
+void comp_memfb_pending_reset(void) {}
+void comp_memfb_emit_pending(void) {}
+void comp_memfb_branch(void) {}
+void comp_memfb_back(uae_u32 desc) {}
+#endif
+
+/** ------------------------------------------------------------------------------
+ * v18 (TODO 7.1): block chaining
+ *
+ * Before, every translated block was a complete C function: prolog (save
+ * the non-volatile registers), the code, a call of do_cycles(), epilog and
+ * return to m68k_run_2a(), which looked up the next block and called it.
+ * Now a block ends with a jump into the chaining stub (r3 = cycles of the
+ * block):
+ *
+ *   - the cycles are charged like do_cycles() does; only when an event is
+ *     due (or the frame rate hack waits) do_cycles() itself is called and
+ *     the translated code is left
+ *   - regs.spcflags set: the translated code is left (interrupts, trace,
+ *     STOP, cache flush, ...), m68k_run_2a() handles them as before
+ *   - otherwise the handler of the next block is taken from cache_tags[];
+ *     if it is translated code, the stub jumps directly behind its prolog
+ *     (comp_chain_entry_offset): the stack frame stays, the block checks
+ *     regs.pc_p as usual. Handlers in C (interpreter, compiling, checksum
+ *     test) are reached through m68k_run_2a().
+ *
+ * The stub also counts the block for the JIT share in the status line.
+ * Every block starts with the same prolog and the same register setup
+ * (comp_ppc_block_setup(), fixed length), so the entry offset is the same
+ * for all blocks. comptestconsistency needs the check in m68k_run_2a()
+ * after every block: no chaining then.
+ */
+
+/* Upper / lower half of an address for lis + lwz/stw/addi */
+STATIC_INLINE uae_u16 comp_ha16(uae_uintptr a)
+{
+	return (uae_u16) ((((uae_u32) a) + 0x8000) >> 16);
+}
+STATIC_INLINE uae_u16 comp_lo16(uae_uintptr a)
+{
+	return (uae_u16) (((uae_u32) a) & 0xffff);
+}
+
+/* Loads a 32 bit value with lis + ori, always two instructions */
+static void comp_ppc_liw_fixed(comp_ppc_reg reg, uae_u32 value)
+{
+	comp_ppc_lis(reg, (uae_u16) (value >> 16));
+	comp_ppc_ori(reg, reg, (uae_u16) (value & 0xffff));
+}
+
+/* Is the chaining active for the translated code? */
+BOOL comp_chain_is_active(void)
+{
+	return comp_chain_active;
+}
+
+/* Register setup at the start of every block, behind the prolog. Fixed
+ * length (see comp_chain_entry_offset). */
+void comp_ppc_block_setup(void)
+{
+	comp_ppc_liw_fixed(PPCR_REGS_BASE_MAPPED, (uae_u32) &regs);
+#ifdef PPCR_BASEADDR
+	comp_ppc_liw_fixed(PPCR_BASEADDR_MAPPED, (uae_u32) baseaddr);
+	comp_ppc_liw_fixed(PPCR_MEMFB_MAPPED, (uae_u32) comp_memfb_stub());
+#endif
+	comp_fixregs_emit_load();
+}
+
+/* Checks the length of the setup of a block (behind its start) */
+BOOL comp_chain_check_entry(uae_u8* block_start)
+{
+	if (comp_chain_active && current_compile_p - block_start != comp_chain_entry_offset)
+	{
+		write_log("JIT: Compiling error: block entry at offset %d, the chaining expects %d\n",
+				(int) (current_compile_p - block_start), comp_chain_entry_offset);
+		comp_compile_error();
+		return FALSE;
+	}
+	return TRUE;
+}
+
+/* Leaves the translated code from the middle of a block: write back the
+ * fixed 68k registers, free the stack frame and jump to a C function, which
+ * returns to m68k_run_2a() */
+void comp_ppc_leave_to(uae_uintptr func)
+{
+	comp_fixregs_emit_store();
+	comp_ppc_epilog(comp_nonvol_regs());
+	comp_ppc_jump(func);
+}
+
+/* End of a block: charge the cycles and continue with the next block
+ * (chaining) or return to m68k_run_2a() */
+void comp_ppc_block_exit(int cycles)
+{
+#ifdef PPCR_MEMFB
+	if (comp_chain_active)
+	{
+		comp_ppc_liw(PPCR_PARAM1_MAPPED, cycles);
+		comp_ppc_addi(PPCR_PARAM2_MAPPED, PPCR_MEMFB_MAPPED, COMP_CHAIN_STUB_OFFSET);
+		comp_ppc_mtctr(PPCR_PARAM2_MAPPED);
+		comp_ppc_bctr();
+		return;
+	}
+#endif
+	comp_ppc_return_from_block(cycles);
+}
+
+#ifdef PPCR_MEMFB
+/* Raw conditional branches of the stub, patched by comp_chain_patch() */
+#define COMP_CHAIN_BLT	0x41800000	/* blt cr0 */
+#define COMP_CHAIN_BNE	0x40820000	/* bne cr0 */
+#define COMP_CHAIN_BLE	0x40810000	/* ble cr0 */
+#define COMP_CHAIN_BGE	0x40800000	/* bge cr0 */
+#define COMP_CHAIN_B	0x48000000	/* b */
+
+static void comp_chain_patch(uae_u8* at, uae_u8* target)
+{
+	uae_u32 w = *((uae_u32*) at);
+	uae_u32 off = (uae_u32) (target - at);
+	if (w == COMP_CHAIN_B)
+		w |= off & 0x03fffffc;
+	else
+		w |= off & 0xfffc;
+	*((uae_u32*) at) = w;
+}
+
+#define R(x) PPCR_MAPPED_REG(x)
+
+static void comp_chain_create_stub(void)
+{
+	uae_u8* save_p = current_compile_p;
+	uae_u8* save_limit = comp_emit_limit;
+	BOOL save_error = was_compile_error;
+	BOOL save_overflow = comp_buffer_overflow;
+	uae_u32 scratch[96];
+	uae_u8 *stub, *b_neg, *b_slow1, *b_slow2, *b_done, *l_done, *b_exit1, *b_exit2, *b_exit3, *l_slow, *b_nostore, *l_exit, *l_nostore;
+
+	comp_chain_active = FALSE;
+	comp_fixregs_select();
+
+	if (!comp_memfb_stub_code || !compiled_code || !currprefs.comp_chain || currprefs.comptestconsistency)
+	{
+		if (compiled_code)
+			write_log("JIT: block chaining off\n");
+		comp_fixregs_on = FALSE;
+		return;
+	}
+
+	was_compile_error = FALSE;
+	comp_buffer_overflow = FALSE;
+
+	//Length of the block entry: prolog + register setup
+	current_compile_p = (uae_u8*) scratch;
+	comp_emit_limit = (uae_u8*) (scratch + 96);
+	comp_ppc_prolog(comp_nonvol_regs());
+	comp_ppc_block_setup();
+	comp_chain_entry_offset = current_compile_p - (uae_u8*) scratch;
+
+	stub = comp_memfb_stub_code + COMP_CHAIN_STUB_OFFSET;
+	current_compile_p = stub;
+	comp_emit_limit = comp_memfb_stub_code + COMP_STUB_BUFFER_BYTES;
+
+	//Cycles (r3), as do_cycles(): pissoff -= cycles; if (pissoff >= 0) done
+	comp_ppc_lis(R(5), comp_ha16((uae_uintptr) &pissoff));
+	comp_ppc_lwz(R(6), comp_lo16((uae_uintptr) &pissoff), R(5));
+	comp_ppc_subf(R(6), R(3), R(6), TRUE);
+	b_neg = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BLT);
+	comp_ppc_stw(R(6), comp_lo16((uae_uintptr) &pissoff), R(5));
+	b_done = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_B);
+
+	//cycles = -pissoff; pissoff = 0; events due (or last line)? do_cycles()
+	comp_chain_patch(b_neg, current_compile_p);
+	comp_ppc_lis(R(7), comp_ha16((uae_uintptr) &is_lastline));
+	comp_ppc_lwz(R(7), comp_lo16((uae_uintptr) &is_lastline), R(7));
+	comp_ppc_cmplwi(PPCR_CR_TMP0, R(7), 0);
+	b_slow1 = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BNE);
+	comp_ppc_neg(R(8), R(6), FALSE);
+	comp_ppc_lis(R(9), comp_ha16((uae_uintptr) &nextevent));
+	comp_ppc_lwz(R(9), comp_lo16((uae_uintptr) &nextevent), R(9));
+	comp_ppc_lis(R(10), comp_ha16((uae_uintptr) &currcycle));
+	comp_ppc_lwz(R(11), comp_lo16((uae_uintptr) &currcycle), R(10));
+	comp_ppc_subf(R(9), R(11), R(9), FALSE);
+	comp_ppc_cmplw(PPCR_CR_TMP0, R(9), R(8));
+	b_slow2 = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BLE);
+	comp_ppc_add(R(11), R(11), R(8), FALSE);
+	comp_ppc_stw(R(11), comp_lo16((uae_uintptr) &currcycle), R(10));
+	comp_ppc_li(R(0), 0);
+	comp_ppc_stw(R(0), comp_lo16((uae_uintptr) &pissoff), R(5));
+
+	//Special flags set: leave the translated code
+	l_done = current_compile_p;
+	comp_chain_patch(b_done, l_done);
+	comp_ppc_lwz(R(7), COMP_GET_OFFSET_IN_REGS(spcflags), PPCR_REGS_BASE_MAPPED);
+	comp_ppc_cmplwi(PPCR_CR_TMP0, R(7), 0);
+	b_exit1 = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BNE);
+
+	//Handler of the next block: cache_tags[cacheline(regs.pc_p)].handler
+	comp_ppc_lwz(R(8), COMP_GET_OFFSET_IN_REGS(pc_p), PPCR_REGS_BASE_MAPPED);
+	comp_ppc_rlwinm(R(9), R(8), 2, 10, 29, FALSE);
+	comp_ppc_lis(R(10), comp_ha16((uae_uintptr) cache_tags));
+	comp_ppc_addi(R(10), R(10), comp_lo16((uae_uintptr) cache_tags));
+	comp_ppc_lwzx(R(11), R(10), R(9));
+
+	//Translated code? (otherwise a C function)
+	comp_ppc_liw(R(12), (uae_u32) compiled_code);
+	comp_ppc_cmplw(PPCR_CR_TMP0, R(11), R(12));
+	b_exit2 = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BLT);
+	comp_ppc_liw(R(12), (uae_u32) compiled_code_top);
+	comp_ppc_cmplw(PPCR_CR_TMP0, R(11), R(12));
+	b_exit3 = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_BGE);
+
+	//Count it for the JIT share and jump behind the prolog of the block
+	comp_ppc_lis(R(5), comp_ha16((uae_uintptr) &jit_indicator_compiled_executed));
+	comp_ppc_lwz(R(6), comp_lo16((uae_uintptr) &jit_indicator_compiled_executed), R(5));
+	comp_ppc_addi(R(6), R(6), 1);
+	comp_ppc_stw(R(6), comp_lo16((uae_uintptr) &jit_indicator_compiled_executed), R(5));
+	comp_ppc_addi(R(11), R(11), (uae_u16) comp_chain_entry_offset);
+	comp_ppc_mtctr(R(11));
+	comp_ppc_bctr();
+
+	//Events due: do_cycles(cycles) with the original cycles in r3, then leave
+	l_slow = current_compile_p;
+	comp_chain_patch(b_slow1, l_slow);
+	comp_chain_patch(b_slow2, l_slow);
+	comp_fixregs_emit_store();
+	comp_ppc_liw(R(12), (uae_u32) do_cycles_callback);
+	comp_ppc_mtctr(R(12));
+	comp_ppc_bctrl();
+	b_nostore = current_compile_p; comp_ppc_emit_word(COMP_CHAIN_B);
+
+	//Leave the translated code: back to m68k_run_2a()
+	l_exit = current_compile_p;
+	comp_chain_patch(b_exit1, l_exit);
+	comp_chain_patch(b_exit2, l_exit);
+	comp_chain_patch(b_exit3, l_exit);
+	comp_fixregs_emit_store();
+	l_nostore = current_compile_p;
+	comp_chain_patch(b_nostore, l_nostore);
+	comp_ppc_return_to_caller(comp_nonvol_regs());
+
+	if (!was_compile_error && comp_chain_entry_offset > 0 && comp_chain_entry_offset < 0x8000)
+	{
+		ppc_cacheflush(stub, current_compile_p - stub);
+		comp_chain_active = TRUE;
+		write_log("JIT: block chaining on (entry offset %d, stub %d bytes)%s\n", comp_chain_entry_offset,
+				(int) (current_compile_p - stub), comp_fixregs_active() ? ", 68k registers in PowerPC registers" : "");
+	}
+	else
+	{
+		write_log("JIT: block chaining stub could not be generated, chaining off\n");
+		comp_fixregs_on = FALSE;
+	}
+
+	current_compile_p = save_p;
+	comp_emit_limit = save_limit;
+	was_compile_error = save_error;
+	comp_buffer_overflow = save_overflow;
+}
+#undef R
+#else
+static void comp_chain_create_stub(void)
+{
+	comp_chain_active = FALSE;
+}
+#endif
+
+/** ------------------------------------------------------------------------------
+ * v18 (TODO 7.4): fixed 68k registers in PowerPC registers
+ *
+ * With block chaining, translated blocks run one after the other without
+ * leaving the translated code. Ten 68k registers (comp_fixregs_68k[]:
+ * D0-D3, A0-A2, A5-A7) then stay in the non-volatile PowerPC registers
+ * r21-r30 the whole time: loaded from regs.regs[] when m68k_run_2a()
+ * enters a block, written back when the translated code is left (chaining
+ * stub, cache miss), around calls that read or change regs.regs[] (the
+ * interpreter for unsupported instructions, Exception(), 64 bit division,
+ * MOVEM through the bank handlers) and in the fallback stub of the checked
+ * memory access. Inside a block they are permanently mapped temporary
+ * registers that never need loading or writing back. The other six 68k
+ * registers use the temporary registers as before.
+ * Calls of C functions keep r21-r30 (non-volatile in the SysV ABI); the
+ * memory bank handlers do not use the 68k registers.
+ */
+STATIC_INLINE BOOL comp_is_fixed_descriptor(comp_tmp_reg* t)
+{
+	return t >= &used_tmp_regs[PPC_TMP_REGS_COUNT] && t < &used_tmp_regs[PPC_TMP_REGS_COUNT + COMP_FIXREGS_COUNT];
+}
+
+/* Non-volatile registers saved by the prolog of every block */
+uae_u32 comp_nonvol_regs(void)
+{
+	return PPCR_REG_USED_NONVOLATILE | (comp_fixregs_on ? COMP_FIXREGS_PPC_MASK : 0);
+}
+
+void comp_fixregs_select(void)
+{
+	comp_fixregs_on = FALSE;
+#ifdef PPCR_MEMFB
+	if (currprefs.comp_fixregs && currprefs.comp_chain && !currprefs.comptestconsistency
+		&& comp_memfb_stub_code && compiled_code)
+		comp_fixregs_on = TRUE;
+#endif
+}
+
+BOOL comp_fixregs_active(void)
+{
+	return comp_fixregs_on;
+}
+
+/* Dependency mask of the fixed registers for the macroblocks */
+uae_u64 comp_fixregs_deps(void)
+{
+	uae_u64 deps = 0;
+	int i;
+
+	if (!comp_fixregs_on) return 0;
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+		deps |= COMP_COMPILER_MACROBLOCK_REG_DX_OR_AX(comp_fixregs_68k[i])
+			| used_tmp_regs[PPC_TMP_REGS_COUNT + i].reg_usage_mapping;
+	return deps;
+}
+
+void comp_fixregs_emit_load(void)
+{
+	int i;
+
+	if (!comp_fixregs_on) return;
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+		comp_ppc_lwz(PPCR_MAPPED_REG(COMP_FIXREGS_FIRST_PPC + i), comp_fixregs_68k[i] * 4, PPCR_REGS_BASE_MAPPED);
+}
+
+void comp_fixregs_emit_store(void)
+{
+	int i;
+
+	if (!comp_fixregs_on) return;
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+		comp_ppc_stw(PPCR_MAPPED_REG(COMP_FIXREGS_FIRST_PPC + i), comp_fixregs_68k[i] * 4, PPCR_REGS_BASE_MAPPED);
+}
+
+/* Is this 68k register fixed in a PowerPC register? */
+BOOL comp_fixregs_is_fixed(int regnum)
+{
+	int i;
+
+	if (!comp_fixregs_on) return FALSE;
+	for (i = 0; i < COMP_FIXREGS_COUNT; i++)
+		if (comp_fixregs_68k[i] == regnum) return TRUE;
+	return FALSE;
 }

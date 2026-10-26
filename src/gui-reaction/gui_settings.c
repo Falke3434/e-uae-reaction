@@ -8,11 +8,12 @@
  *   Einstellungen (PROGDIR:E-UAE.prefs, gelten fuer alle Konfigurationen,
  *   werden bei jedem Programmstart geladen):
  *     - Ordner fuer Kickstart-ROMs, Disketten, Hardfiles, CD-Images,
- *       Konfigurationen und Savestates: Startordner der Dateirequester, wenn
+ *       Konfigurationen, Savestates (v18: und Screenshots): Startordner der Dateirequester, wenn
  *       das zugehoerige Feld noch leer ist. Leer = Vorgabe des E-UAE-Kerns
  *       (rom_path, floppy_path, hardfile_path, savestate_path aus
  *       targets/t-amiga.h, Konfigurationen PROGDIR:configs wie in
- *       od-amiga/main.c), CD-Images ohne Vorgabe.
+ *       od-amiga/main.c), CD-Images PROGDIR:Isos/ (v18, vorher keine
+ *       Vorgabe), Screenshots PROGDIR:Screenshots (v18).
  *     - Log-Ausgabe: aus (stdout/stderr nach NIL:), Fenster (wie bisher)
  *       oder Datei PROGDIR:E-UAE.log. "Aus" und "Datei" wirken sofort,
  *       "Fenster" beim naechsten Programmstart (ein umgeleiteter Ausgabekanal
@@ -31,7 +32,7 @@
 struct ra_settings ra_settings;
 
 static const char *const dir_keys[RA_DIR_COUNT] = {
-    "rom_dir", "floppy_dir", "hardfile_dir", "cdimage_dir", "config_dir", "savestate_dir"
+    "rom_dir", "floppy_dir", "hardfile_dir", "cdimage_dir", "config_dir", "savestate_dir", "screenshot_dir"
 };
 static const char *const log_keys[] = { "off", "window", "file", NULL };
 
@@ -49,7 +50,9 @@ static const char *core_dir (int kind)
 	case RA_DIR_FLOPPY:    return prefs_get_attr ("floppy_path");
 	case RA_DIR_HARDFILE:  return prefs_get_attr ("hardfile_path");
 	case RA_DIR_SAVESTATE: return prefs_get_attr ("savestate_path");
+	case RA_DIR_CDIMAGE:   return "PROGDIR:Isos/";	/* v18 (before: none) */
 	case RA_DIR_CONFIG:    return "PROGDIR:configs";
+	case RA_DIR_SCREENSHOT: return "PROGDIR:Screenshots";
 	default:               return NULL;
     }
 }
@@ -84,6 +87,12 @@ BOOL ra_request_file_in (int kind, const char *title, const char *pattern, BOOL 
 	}
     }
     return ra_request_file (title, pattern, save, drawers_only, path, pathlen);
+}
+
+/* v18: Screenshot-Ordner fuer screenshot() in gfx-amigaos/ami-win.c */
+const char *gui_screenshot_dir (void)
+{
+    return ra_settings_dir (RA_DIR_SCREENSHOT);
 }
 
 /* ---------------------------------------------------------------------- */
@@ -196,7 +205,7 @@ void ra_settings_init (void)
 enum { SID_OK = 1, SID_CANCEL, SID_LOG, SID_ICONIFY, SID_DIR = 10, SID_SEL = 20 };
 
 static const char *const dir_labels[RA_DIR_COUNT] = {
-    "Kickstart ROMs:", "Floppy images:", "Hardfiles:", "CD images:", "Configurations:", "Savestates:"
+    "Kickstart ROMs:", "Floppy images:", "Hardfiles:", "CD images:", "Configurations:", "Savestates:", "Screenshots:"
 };
 static const char *const log_names[] = { "Off", "Window", "File (PROGDIR:E-UAE.log)", NULL };
 
@@ -212,6 +221,7 @@ static const struct ra_hint settings_hints[] = {
     { SID_DIR + RA_DIR_CDIMAGE, 1, "Folder for CD images (ISO, CUE/BIN)." },
     { SID_DIR + RA_DIR_CONFIG, 1, "Folder for configuration files (Load / Save as)." },
     { SID_DIR + RA_DIR_SAVESTATE, 1, "Folder for savestates." },
+    { SID_DIR + RA_DIR_SCREENSHOT, 1, "Folder for screenshots (hotkey Ctrl+Alt+P). Created when it does not exist yet." },
     { SID_SEL, RA_DIR_COUNT, "Choose the folder with a requester." },
     { SID_LOG, 1, "Where the E-UAE log goes. Off: no output window. Window: the output window as before (takes effect at the next start). File: PROGDIR:E-UAE.log, new at every start - useful for bug reports." },
     { SID_ICONIFY, 1, "When the emulation is started, the GUI window becomes an icon on the Workbench (double-click it to get the window back). The window can also be iconified at any time with the iconify gadget in its title bar." },
@@ -291,6 +301,7 @@ void ra_settings_window (void)
 	    LAYOUT_AddChild, dir_row (3), CHILD_Label, ra_label (dir_labels[3]),
 	    LAYOUT_AddChild, dir_row (4), CHILD_Label, ra_label (dir_labels[4]),
 	    LAYOUT_AddChild, dir_row (5), CHILD_Label, ra_label (dir_labels[5]),
+	    LAYOUT_AddChild, dir_row (6), CHILD_Label, ra_label (dir_labels[6]),
 	LayoutEnd,
 	CHILD_WeightedHeight, 0,
 	LAYOUT_AddChild, VLayoutObject,

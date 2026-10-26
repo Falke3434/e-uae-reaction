@@ -2022,7 +2022,7 @@ void execute_normal(void)
 
 		//TODO: removed spcflag checking from breaking the JIT compile pre-charge loop, it must be investigated on what conditions we MUST stop the cycle. At the moment I don't see any reason why the actual loop cannot be completed.
 		//} while (!end_block(opcode) && (blocklen < MAXRUN - 1) && (!r->spcflags));
-	} while (!end_block(opcode) && (blocklen < MAXRUN - 1));
+	} while (!comp_trace_end(opcode, pc_hist, blocklen, r->pc_p) && (blocklen < MAXRUN - 1));
 
 	//Put the PC data at the end of the execution history, in case the block has ended with a supported instruction
 	pc_hist[blocklen].location = (uae_u16*) r->pc_p;
@@ -2038,6 +2038,9 @@ typedef void compiled_handler(void);
 
 static void m68k_run_2a (void)
 {
+	/* v18: JIT settings changed by the vertical blank handler (inside
+	 * translated code) are applied here, between two blocks */
+	comp_run_loop_active = 1;
 	for (;;) {
 		compiled_handler* handler;
 
@@ -2065,14 +2068,18 @@ static void m68k_run_2a (void)
 			//Stop the emulator, there is no point in going on
 			write_log("JIT: cache consistency error, memory changed since code was compiled\n");
 			uae_quit();
+			comp_run_loop_active = 0;
 			return;
 		}
 
 		// Whenever we return from that, we should check spcflags
 		if (regs.spcflags) {
+			if (comp_prefs_pending)
+				comp_apply_pending_prefs ();
 			// Do specialties with an abitrary number of cycles,
 			// we don't have the right number of cycles, but something must be provided 
 			if (do_specialties (CYCLE_UNIT * 2, &regs)) {
+				comp_run_loop_active = 0;
 				return;
 			}
 		}

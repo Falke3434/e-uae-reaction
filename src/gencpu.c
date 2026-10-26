@@ -2659,7 +2659,10 @@ static void gen_opcode (unsigned long int opcode)
 	printf ("\tuae_s32 offset = extra & 0x800 ? (uae_s32)(m68k_dreg (regs, (extra >> 6) & 7)) : ((uae_s32)(extra >> 6) & 0x1f);\n");
 	printf ("\tint width = (((extra & 0x20 ? ((int)m68k_dreg (regs, extra & 7)) : extra) -1) & 0x1f) +1;\n");
 	if (curi->dmode == Dreg) {
-	    printf ("\tuae_u32 tmp = m68k_dreg (regs, dstreg) << (offset & 0x1f);\n");
+	    /* v18: in a data register the field wraps around (bit 0 is
+	     * followed by bit 31), the shift lost the wrapped part */
+	    printf ("\tuae_u32 tmp = m68k_dreg (regs, dstreg);\n");
+	    printf ("\tif (offset & 0x1f) tmp = (tmp << (offset & 0x1f)) | (tmp >> (32 - (offset & 0x1f)));\n");
 	} else {
 	    printf ("\tuae_u32 tmp,bf0,bf1;\n");
 	    printf ("\tdsta += (offset >> 3) | (offset & 0x80000000 ? ~0x1fffffff : 0);\n");
@@ -2694,7 +2697,10 @@ static void gen_opcode (unsigned long int opcode)
 	    printf ("\ttmp = 0xffffffff;\n");
 	    break;
 	case i_BFINS:
+	    /* v18: N and Z from the inserted field (the low "width" bits),
+	     * not from the whole register (as WinUAE and the 68020 manual) */
 	    printf ("\ttmp = m68k_dreg (regs, (extra >> 12) & 7);\n");
+	    printf ("\ttmp = tmp & (0xffffffffu >> (32 - width));\n");
 	    printf ("\tSET_NFLG (&regs->ccrflags, tmp & (1 << (width - 1)) ? 1 : 0);\n");
 	    printf ("\tSET_ZFLG (&regs->ccrflags, (tmp == 0) ? 1 : 0);\n");
 	    break;
@@ -2708,11 +2714,13 @@ static void gen_opcode (unsigned long int opcode)
 	    {
 		printf ("\ttmp <<= (32 - width);\n");
 		if (curi->dmode == Dreg) {
-		    printf ("\tm68k_dreg (regs, dstreg) = (m68k_dreg (regs, dstreg) & ((offset & 0x1f) == 0 ? 0 :\n");
-		    printf ("\t\t(0xffffffff << (32 - (offset & 0x1f))))) |\n");
-		    printf ("\t\t(tmp >> (offset & 0x1f)) |\n");
-		    printf ("\t\t(((offset & 0x1f) + width) >= 32 ? 0 :\n");
-		    printf (" (m68k_dreg (regs, dstreg) & ((uae_u32)0xffffffff >> ((offset & 0x1f) + width))));\n");
+		    /* v18: rotate the field to the top, replace it, rotate back
+		     * (the field wraps around in a data register) */
+		    printf ("\t{ uae_u32 r = m68k_dreg (regs, dstreg);\n");
+		    printf ("\t  if (offset & 0x1f) r = (r << (offset & 0x1f)) | (r >> (32 - (offset & 0x1f)));\n");
+		    printf ("\t  r = (width == 32 ? 0 : (r & (0xffffffffu >> width))) | tmp;\n");
+		    printf ("\t  if (offset & 0x1f) r = (r >> (offset & 0x1f)) | (r << (32 - (offset & 0x1f)));\n");
+		    printf ("\t  m68k_dreg (regs, dstreg) = r; }\n");
 		} else {
 		    printf ("\tbf0 = (bf0 & (0xff000000 << (8 - (offset & 7)))) |\n");
 		    printf ("\t\t(tmp >> (offset & 7)) |\n");
@@ -2732,10 +2740,11 @@ static void gen_opcode (unsigned long int opcode)
 	    printf ("\tuae_u16 val = m68k_dreg (regs, srcreg) + %s;\n", gen_nextiword (0));
 	    printf ("\tm68k_dreg (regs, dstreg) = (m68k_dreg (regs, dstreg) & 0xffffff00) | ((val >> 4) & 0xf0) | (val & 0xf);\n");
 	} else {
+	    /* v18: the source is a word: -(A7) steps 2, not 2 per byte (WinUAE) */
 	    printf ("\tuae_u16 val;\n");
-	    printf ("\tm68k_areg (regs, srcreg) -= areg_byteinc[srcreg];\n");
+	    printf ("\tm68k_areg (regs, srcreg) -= 1;\n");
 	    printf ("\tval = (uae_u16)get_byte (m68k_areg (regs, srcreg));\n");
-	    printf ("\tm68k_areg (regs, srcreg) -= areg_byteinc[srcreg];\n");
+	    printf ("\tm68k_areg (regs, srcreg) -= 1;\n");
 	    printf ("\tval = (val | ((uae_u16)get_byte (m68k_areg (regs, srcreg)) << 8)) + %s;\n", gen_nextiword (0));
 	    printf ("\tm68k_areg (regs, dstreg) -= areg_byteinc[dstreg];\n");
 	    printf ("\tput_byte (m68k_areg (regs, dstreg),((val >> 4) & 0xf0) | (val & 0xf));\n");
@@ -2751,9 +2760,10 @@ static void gen_opcode (unsigned long int opcode)
 	    printf ("\tm68k_areg (regs, srcreg) -= areg_byteinc[srcreg];\n");
 	    printf ("\tval = (uae_u16)get_byte (m68k_areg (regs, srcreg));\n");
 	    printf ("\tval = (((val << 4) & 0xf00) | (val & 0xf)) + %s;\n", gen_nextiword (0));
-	    printf ("\tm68k_areg (regs, dstreg) -= areg_byteinc[dstreg];\n");
+	    /* v18: the destination is a word: -(A7) steps 2 (WinUAE) */
+	    printf ("\tm68k_areg (regs, dstreg) -= 1;\n");
 	    printf ("\tput_byte (m68k_areg (regs, dstreg),val);\n");
-	    printf ("\tm68k_areg (regs, dstreg) -= areg_byteinc[dstreg];\n");
+	    printf ("\tm68k_areg (regs, dstreg) -= 1;\n");
 	    printf ("\tput_byte (m68k_areg (regs, dstreg),val >> 8);\n");
 	}
 	break;

@@ -581,68 +581,128 @@ int getbuttonstate (int joy, int button)
     return joybutton[joy] & (1 << button);
 }
 
-static void mouseupdate (int pct)
+/*
+ * v18: mouse counters as in WinUAE (mouseupdate()/getvelocity()/readinput()).
+ *
+ * Before, every vsync put the whole host mouse movement of the frame into
+ * the counters (mouseupdate (100)), limited to +-127 against the counter at
+ * the previous vsync, and threw the rest away. When the Amiga did not read
+ * JOYxDAT in every frame (with the fast JIT the frames come in bursts, the
+ * VBlank interrupt is late), the counter moved by more than 127 between two
+ * reads - the 8 bit difference wrapped and the pointer jumped back. Now the
+ * movement is given to the counters only when the Amiga reads them, in
+ * proportion to the time since the previous read, at most 120 per read; the
+ * rest stays for the next read and is never lost.
+ */
+#define MOUSEXY_MAX 16384
+
+static int input_frame, prev_input_frame, prev_input_vpos;
+
+static int getvelocity (int num, int subnum, int pct)
 {
-    int v, i;
+    int val, v;
+
+    if (pct > 1000)
+	pct = 1000;
+    if (pct < 0)
+	pct = 0;
+    val = mouse_delta[num][subnum];
+    v = val * pct / 1000;
+    if (!v) {
+	if (val < -(int) maxvpos / 2)
+	    v = -2;
+	else if (val < 0)
+	    v = -1;
+	else if (val > (int) maxvpos / 2)
+	    v = 2;
+	else if (val > 0)
+	    v = 1;
+    }
+    if (!mouse_deltanoreset[num][subnum])
+	mouse_delta[num][subnum] -= v;
+    return v;
+}
+
+static void mouseupdate (int pct, int vsync)
+{
+    const int max = 120;
+    int i;
 
     for (i = 0; i < 2; i++) {
 
-	v = mouse_delta[i][0] * pct / 100;
-	mouse_x[i] += v;
-	if (!mouse_deltanoreset[i][0])
-	    mouse_delta[i][0] -= v;
+	if (mouse_port[i]) {
+	    int v1, v2, v3;
 
-	v = mouse_delta[i][1] * pct / 100;
-	mouse_y[i] += v;
-	if (!mouse_deltanoreset[i][1])
-	    mouse_delta[i][1] -= v;
+	    v1 = getvelocity (i, 0, pct);
+	    mouse_x[i] += v1;
+	    if (mouse_x[i] < 0) {
+		mouse_x[i] += MOUSEXY_MAX;
+		mouse_frame_x[i] = mouse_x[i] - v1;
+	    }
+	    if (mouse_x[i] >= MOUSEXY_MAX) {
+		mouse_x[i] -= MOUSEXY_MAX;
+		mouse_frame_x[i] = mouse_x[i] - v1;
+	    }
 
-	v = mouse_delta[i][2] * pct / 100;
-	if (v > 0)
-	    record_key (0x7a << 1);
-	else if (v < 0)
-	    record_key (0x7b << 1);
-	if (!mouse_deltanoreset[i][2])
-	    mouse_delta[i][2] = 0;
+	    v2 = getvelocity (i, 1, pct);
+	    mouse_y[i] += v2;
+	    if (mouse_y[i] < 0) {
+		mouse_y[i] += MOUSEXY_MAX;
+		mouse_frame_y[i] = mouse_y[i] - v2;
+	    }
+	    if (mouse_y[i] >= MOUSEXY_MAX) {
+		mouse_y[i] -= MOUSEXY_MAX;
+		mouse_frame_y[i] = mouse_y[i] - v2;
+	    }
 
-	if (mouse_frame_x[i] - mouse_x[i] > 127)
-	    mouse_x[i] = mouse_frame_x[i] - 127;
-	if (mouse_frame_x[i] - mouse_x[i] < -127)
-	    mouse_x[i] = mouse_frame_x[i] + 127;
-
-	if (mouse_frame_y[i] - mouse_y[i] > 127)
-	    mouse_y[i] = mouse_frame_y[i] - 127;
-	if (mouse_frame_y[i] - mouse_y[i] < -127)
-	    mouse_y[i] = mouse_frame_y[i] + 127;
-
-	if (pct == 100) {
-	    if (!mouse_deltanoreset[i][0])
-		mouse_delta[i][0] = 0;
-	    if (!mouse_deltanoreset[i][1])
-		mouse_delta[i][1] = 0;
+	    /* mouse wheel: NewMouse key codes */
+	    v3 = getvelocity (i, 2, pct);
+	    if (v3 > 0)
+		record_key (0x7a << 1);
+	    else if (v3 < 0)
+		record_key (0x7b << 1);
 	    if (!mouse_deltanoreset[i][2])
 		mouse_delta[i][2] = 0;
+
+	    if (mouse_frame_x[i] - mouse_x[i] > max) {
+		mouse_x[i] = mouse_frame_x[i] - max;
+		mouse_x[i] &= MOUSEXY_MAX - 1;
+	    }
+	    if (mouse_frame_x[i] - mouse_x[i] < -max) {
+		mouse_x[i] = mouse_frame_x[i] + max;
+		mouse_x[i] &= MOUSEXY_MAX - 1;
+	    }
+	    if (mouse_frame_y[i] - mouse_y[i] > max) {
+		mouse_y[i] = mouse_frame_y[i] - max;
+		mouse_y[i] &= MOUSEXY_MAX - 1;
+	    }
+	    if (mouse_frame_y[i] - mouse_y[i] < -max) {
+		mouse_y[i] = mouse_frame_y[i] + max;
+		mouse_y[i] &= MOUSEXY_MAX - 1;
+	    }
+	}
+
+	if (!vsync) {
 	    mouse_frame_x[i] = mouse_x[i];
 	    mouse_frame_y[i] = mouse_y[i];
 	}
-
     }
 }
 
-static unsigned int input_read, input_vpos;
-
+/* the Amiga reads JOYxDAT: give it the movement since the previous read */
 static void readinput (void)
 {
-    if (!input_read && (vpos & ~31) != (input_vpos & ~31)) {
-	idev[IDTYPE_JOYSTICK].read ();
-	idev[IDTYPE_MOUSE].read ();
-	mouseupdate ((vpos - input_vpos) * 100 / maxvpos);
-	input_vpos = vpos;
+    int max = maxvpos ? (int) maxvpos : 1;
+    int diff = (input_frame * max + (int) vpos) - (prev_input_frame * max + prev_input_vpos);
+
+    if (diff > 0) {
+	if (diff < 10)
+	    mouseupdate (0, 0);
+	else
+	    mouseupdate (diff * 1000 / max, 0);
     }
-    if (input_read) {
-	input_vpos = vpos;
-	input_read = 0;
-    }
+    prev_input_frame = input_frame;
+    prev_input_vpos = vpos;
 }
 
 int getjoystate (int joy)
@@ -1332,11 +1392,10 @@ void inputdevice_vsync (void)
 	    }
 	}
     }
-    mouseupdate (100);
+    mouseupdate (0, 1);		/* v18: only the minimal step, see readinput() */
     inputdelay = rand () % (maxvpos == 0 ? 1 : maxvpos - 1);
     idev[IDTYPE_MOUSE].read ();
-    input_read = 1;
-    input_vpos = 0;
+    input_frame++;
     inputdevice_handle_inputcode ();
     if (ievent_alive > 0)
 	ievent_alive--;

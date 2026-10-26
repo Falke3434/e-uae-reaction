@@ -129,6 +129,38 @@ void comp_macroblock_push_load_memory_word(uae_u64 regsin, uae_u64 regsout, comp
 void comp_macroblock_push_load_memory_word_extended(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg base_reg, uae_u16 offset);
 void comp_macroblock_push_load_memory_byte(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg base_reg, uae_u16 offset);
 void comp_macroblock_push_map_physical_mem(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg dest_mem_reg, comp_ppc_reg source_reg);
+void comp_macroblock_push_load_memory_checked(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg addr_reg, comp_ppc_reg temp_reg, int size);
+void comp_macroblock_push_save_memory_checked(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg source_reg, comp_ppc_reg addr_reg, comp_ppc_reg temp_reg, int size);
+/* v18: shift/rotate kinds for comp_macroblock_push_shift_count() */
+#define COMP_SHIFT_ASL	0
+#define COMP_SHIFT_ASR	1
+#define COMP_SHIFT_LSL	2
+#define COMP_SHIFT_LSR	3
+#define COMP_SHIFT_ROL	4
+#define COMP_SHIFT_ROR	5
+#define COMP_SHIFT_ROXL	6
+#define COMP_SHIFT_ROXR	7
+void comp_macroblock_push_bitfield_mark_low_byte(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg mask_reg);
+void comp_macroblock_push_bitfield_skip_low_byte(uae_u64 regsin);
+void comp_macroblock_push_bitfield_skip_target(void);
+void comp_macroblock_push_mull(uae_u64 regsin, uae_u64 regsout, BOOL is_signed, BOOL is_64, BOOL high_last, comp_ppc_reg src_reg, comp_ppc_reg dl_reg, comp_ppc_reg dh_reg, comp_ppc_reg t0, comp_ppc_reg t1);
+#define COMP_BCD_ABCD	0
+#define COMP_BCD_SBCD	1
+#define COMP_BCD_NBCD	2
+void comp_macroblock_push_bcd(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg src_reg, comp_ppc_reg dest_reg, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3, comp_ppc_reg t4);
+#define COMP_BF_TST	0
+#define COMP_BF_EXTU	1
+#define COMP_BF_EXTS	2
+#define COMP_BF_FFO		3
+#define COMP_BF_CHG		4
+#define COMP_BF_CLR		5
+#define COMP_BF_SET		6
+#define COMP_BF_INS		7
+void comp_macroblock_push_bitfield_reg(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg d, comp_ppc_reg r, comp_ppc_reg off, comp_ppc_reg wid, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3);
+void comp_macroblock_push_bitfield_mem(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg hi, comp_ppc_reg lo, comp_ppc_reg r, comp_ppc_reg off, comp_ppc_reg wid, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3);
+void comp_macroblock_push_shift_count(uae_u64 regsin, uae_u64 regsout, int kind, int size, comp_ppc_reg dest_reg, comp_ppc_reg count_reg, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3);
+void comp_macroblock_push_stack_frame_alloc(uae_u16 size);
+void comp_macroblock_push_stack_frame_free(uae_u16 size);
 void comp_macroblock_push_save_memory_spec(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg source_reg, comp_ppc_reg dest_mem_reg, uae_u8 size);
 void comp_macroblock_push_save_memory_long(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg source_reg, comp_ppc_reg base_reg, uae_u16 offset);
 void comp_macroblock_push_save_memory_word(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg source_reg, comp_ppc_reg base_reg, uae_u16 offset);
@@ -173,6 +205,30 @@ void comp_macroblock_push_restore_register_from_context(uae_u64 regsout, comp_pp
 void comp_macroblock_push_load_pc_from_register(uae_u64 regsin, comp_ppc_reg address_reg);
 void comp_macroblock_push_load_pc_from_immediate_conditional(uae_u32 target_address, uae_u32 skip_address, BOOL negate, comp_ppc_reg address_reg, comp_ppc_reg tmp_reg);
 void comp_macroblock_push_load_pc_from_immediate_conditional_decrement_register(uae_u64 regsin, comp_ppc_reg decrement_reg, uae_u32 target_address, uae_u32 skip_address, BOOL negate, comp_ppc_reg address_reg, comp_ppc_reg tmp_reg);
+/* v18 (TODO 7.5): conditional branches inside a block */
+void comp_macroblock_push_trace_exit(int exit_bibo, uae_u32 exit_address);
+void comp_macroblock_push_trace_dbcc(uae_u64 regsin, comp_ppc_reg decrement_reg, comp_ppc_reg tmp_reg, BOOL negate, BOOL follow_taken, uae_u32 exit_address);
+uae_u64 comp_exit_deps(void);
+void comp_macroblock_push_fixregs_store(void);
+
+/* v18 (TODO 7.3): FPU */
+#define COMP_FPU_SRC_FPREG		1	/* f1 = FPn */
+#define COMP_FPU_SRC_INT_GPR	2	/* f1 = (double) integer in gpr (size 1, 2, 4) */
+#define COMP_FPU_SRC_INT_TMP	3	/* f1 = (double) integer in the work area */
+#define COMP_FPU_SRC_SINGLE_GPR	4	/* f1 = single in gpr */
+#define COMP_FPU_SRC_SINGLE_TMP	5	/* f1 = single in the work area */
+#define COMP_FPU_SRC_DOUBLE_TMP	6	/* f1 = double in the work area */
+#define COMP_FPU_SRC_CONST		7	/* f1 = constant hi:lo */
+#define COMP_FPU_ARITH			8	/* operation with f1 into FPn, translated */
+#define COMP_FPU_ARITH_CALL		9	/* operation with f1 into FPn, fpp_jit_arith() */
+#define COMP_FPU_DST_INT_CALL	10	/* work area = fpp_jit_toint (FPn) */
+#define COMP_FPU_DST_SINGLE		11	/* work area = FPn as single */
+#define COMP_FPU_DST_DOUBLE		12	/* work area = FPn as double */
+#define COMP_FPU_COND			13	/* CR0.EQ = the FPU condition is false */
+void comp_macroblock_push_fpu(uae_u64 regsin, uae_u64 regsout, int kind, int fpreg, uae_u32 extra, int size, comp_ppc_reg gpr, uae_u32 hi, uae_u32 lo);
+BOOL comp_fpu_inline_op(uae_u16 extra);
+void comp_macroblock_push_fixregs_load(void);
+extern int comp_trace_exit_cycles;
 void comp_macroblock_push_set_byte_from_z_flag(uae_u64 regsout, comp_ppc_reg output_reg, BOOL negate);
 void comp_macroblock_push_or_negative_mask_if_n_flag_set(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg mask_reg);
 void comp_macroblock_push_convert_ccr_to_internal(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg input_reg);

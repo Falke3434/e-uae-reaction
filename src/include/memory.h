@@ -14,6 +14,8 @@ extern int special_mem;
 #define SPECIAL_MEM_READ 1
 #define SPECIAL_MEM_WRITE 2
 extern void *cache_alloc (int);
+extern int ppc_cpu_native_mcrxr (void);   /* v18: od-amiga/memory.c */
+extern int ppc_cpu_has_fpu (void);        /* v18: od-amiga/memory.c (TODO 7.3) */
 extern void cache_free (void*);
 
 extern int canbang;

@@ -201,6 +201,10 @@ struct uae_prefs {
 
     int comp_hardflush;
     int comp_constjump;
+    int comp_chain;		/* v18: translated blocks jump to each other (TODO 7.1) */
+    int comp_condjump;		/* v18: blocks continue over conditional branches (TODO 7.5) */
+    int comp_fixregs;		/* v18: 68k registers stay in PowerPC registers (TODO 7.4) */
+    int comp_fpu;		/* v18: translate FPU instructions (TODO 7.3) */
 
     int cachesize;
     int optcount[10];
@@ -281,6 +285,7 @@ struct uae_prefs {
     char amiga_publicscreen[256];
     int  amiga_use_grey;
     int  amiga_middle_release;   /* v17: middle button frees the pointer (window mode) */
+    int  amiga_magic_mouse;      /* v18: Amiga pointer follows the host pointer (RTG window) */
     int  amiga_use_dither;
     int  amiga_use_overlay;
 #endif
@@ -329,6 +334,7 @@ extern void audio_save_options (FILE *f, const struct uae_prefs *p);
 extern int  audio_parse_option (struct uae_prefs *p, const char *option, const char *value);
 
 extern int cfgfile_load (struct uae_prefs *, const char *filename, int *);
+extern int cfgfile_use_gui_seen;	/* v18 */
 extern int cfgfile_save (const struct uae_prefs *, const char *filename, int);
 extern void cfgfile_parse_line (struct uae_prefs *p, char *, int);
 extern int cfgfile_parse_option (struct uae_prefs *p, char *option, char *value, int);

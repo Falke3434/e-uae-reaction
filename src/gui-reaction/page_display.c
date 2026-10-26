@@ -209,7 +209,7 @@ static const struct ra_hint hints[] = {
     { GID_YCENTER, 1, "Center the picture vertically in the window." },
     { GID_FRAMERATE, 1, "Draw only every nth frame. Higher values save CPU time." },
     { GID_LORES, 1, "Render at half the horizontal resolution. Faster, but less sharp." },
-    { GID_ASPECT, 1, "Correct the pixel aspect ratio of the emulated display." },
+    { GID_ASPECT, 1, "Keep the aspect ratio of the picture when the window or screen has another shape: the picture is scaled with the same factor in both directions and centred, the rest stays black. Off: the picture fills the whole window. Graphics card (RTG) pictures always keep their aspect ratio." },
     { GID_DITHER, 1, "Reduce banding when the display has only a few colors." },
     { GID_GREY, 1, "Show the picture in grayscale." },
     { GID_LEDS, 1, "Show the power and drive LEDs inside the picture." },

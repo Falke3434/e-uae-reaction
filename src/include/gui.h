@@ -36,6 +36,7 @@ struct gui_info
 #ifdef JIT
     uae_u8 jiton;				/* If non-zero then JIT feature is turned on */
     uae_u32 jitled;				/* JIT compiled code execution ratio indicator */
+    int jitpct;					/* v18: share of the block runs in translated code in %, -1 = JIT off (status line) */
 #endif
 };
 #ifndef JIT

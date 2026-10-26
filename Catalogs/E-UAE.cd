@@ -543,7 +543,7 @@ MSG_HINT_MEDIA_DFTYPE (178//)
 Type of this floppy drive. Off disables the drive.
 ;
 MSG_HINT_MEDIA_DFFILE (179//)
-Disk image inserted in this drive: ADF, ADZ or DMS, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
+Disk image inserted in this drive: ADF, ADZ, DMS or FDI, also packed in a ZIP, GZ, LHA or LZX archive (the first disk image in it; another one with archive.lha/name.adf).
 ;
 MSG_HINT_MEDIA_DFSEL (180//)
 Choose a disk image for this drive.
@@ -606,10 +606,10 @@ MSG_HINT_HARDWARE_JITCACHE (199//)
 Size of the JIT translation cache. Off disables the JIT compiler. Needs a 68020 or higher with 32 bit addressing.
 ;
 MSG_HINT_HARDWARE_JITHARD (200//)
-When the Amiga flushes its CPU cache, throw away all translated code (safe, slower). Off: keep the code and translate again only blocks whose memory has changed (checksum test).
+When the Amiga flushes its CPU cache, throw away all translated code (only for programs that change their own code without telling the CPU; slower, short stalls). Off (default, as in WinUAE): keep the code and translate again only blocks whose memory has changed (checksum test).
 ;
 MSG_HINT_HARDWARE_JITCONST (201//)
-Optimization for jumps with fixed targets. Can be faster, but may reduce compatibility.
+A translated block continues at the target of jumps with a fixed target (BRA, BSR, JMP and JSR to an absolute address) instead of ending there. Longer blocks, faster.
 ;
 MSG_HINT_HARDDISK_LIST (202//)
 Mounted drives and directories. Select an entry to edit it.
@@ -702,7 +702,7 @@ MSG_HINT_DISPLAY_LORES (231//)
 Render at half the horizontal resolution. Faster, but less sharp.
 ;
 MSG_HINT_DISPLAY_ASPECT (232//)
-Correct the pixel aspect ratio of the emulated display.
+Keep the aspect ratio of the picture when the window or screen has another shape: the picture is scaled with the same factor in both directions and centred, the rest stays black. Off: the picture fills the whole window. Graphics card (RTG) pictures always keep their aspect ratio.
 ;
 MSG_HINT_DISPLAY_VSYNC (233//)
 Synchronize drawing with the screen refresh to avoid tearing.
@@ -774,7 +774,7 @@ MSG_HINT_CONFIG_SAVEAS (255//)
 Save the current settings under a new file name.
 ;
 MSG_HINT_CONFIG_STATE_LOAD (256//)
-Load a saved emulation state (savestate).
+Load a saved emulation state (savestate). When the emulation is stopped, it starts with this state.
 ;
 MSG_HINT_CONFIG_STATE_SAVE (257//)
 Save the state of the running emulation to a file.
@@ -1519,4 +1519,64 @@ Middle mouse button releases the pointer
 ;
 MSG_SET_504 (504//)
 In a window on the Workbench, the middle mouse button gives the pointer back to the Workbench and makes the E-UAE window inactive. Click into the window to continue. The Amiga then gets no middle button; in full screen it always does.
+;
+MSG_SET_505 (505//)
+Memory access:
+;
+MSG_SET_506 (506//)
+Indirect (safe)
+;
+MSG_SET_507 (507//)
+Direct (fast)
+;
+MSG_SET_508 (508//)
+Direct, Kickstart indirect
+;
+MSG_SET_509 (509//)
+Indirect until Picasso96
+;
+MSG_SET_510 (510//)
+Optimize compiled code
+;
+MSG_SET_511 (511//)
+How translated code accesses Amiga memory. Indirect: every access goes through the memory handlers (safe, slower). Direct: plain RAM is accessed directly; accesses to chip registers and other special memory are detected and then use the handlers (faster). Kickstart indirect: direct, except for code in the Kickstart ROM. Until Picasso96: indirect until a Picasso96 screen has been opened, then direct.
+;
+MSG_SET_512 (512//)
+Remove translated instructions whose results are never used. Faster; switch off only to track down JIT problems.
+;
+MSG_SET_513 (513//)
+Chain translated blocks
+;
+MSG_SET_514 (514//)
+Translate across branches
+;
+MSG_SET_515 (515//)
+Keep 68k registers in PowerPC registers
+;
+MSG_SET_516 (516//)
+Translate FPU instructions
+;
+MSG_SET_517 (517//)
+Translated blocks jump directly into the next block instead of returning to the main loop after every block. Much faster; switch off only to track down JIT problems.
+;
+MSG_SET_518 (518//)
+A translated block continues over conditional branches (Bcc, DBcc, FBcc) on the path the program took; the other path leaves the block there. Longer blocks, faster.
+;
+MSG_SET_519 (519//)
+D0-D3, A0-A2 and A5-A7 stay in PowerPC registers while translated blocks run one after the other. Needs block chaining. Faster.
+;
+MSG_SET_520 (520//)
+Translate the FPU instructions (68881/68882, 68040, 68060). Only with a classic PowerPC FPU (not on the A1222); otherwise they always run in the interpreter.
+;
+MSG_SET_521 (521//)
+Screenshots:
+;
+MSG_SET_522 (522//)
+Folder for screenshots (hotkey Ctrl+Alt+P). Created when it does not exist yet.
+;
+MSG_SET_523 (523//)
+Magic Mouse: Amiga pointer follows the host pointer
+;
+MSG_SET_524 (524//)
+The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before.
 ;

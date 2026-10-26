@@ -112,6 +112,16 @@ void fixup_prefs_dimensions (struct uae_prefs *prefs)
 	prefs->gfx_height_win = 1280;
     prefs->gfx_width_win += 7;
     prefs->gfx_width_win &= ~7;
+
+    /* v18: size of the chipset picture buffer, as the GUI sets it
+     * (page_display.c): window or fullscreen size. Before, only the GUI
+     * set it - a configuration started without GUI (RunInUAE, "-f ...")
+     * got the fallback 720x552, which was scaled into the 720x576 window
+     * (squeezed picture, double black scanlines). */
+#ifdef __amigaos4__
+    prefs->gfx_width  = prefs->gfx_afullscreen ? prefs->gfx_width_fs  : prefs->gfx_width_win;
+    prefs->gfx_height = prefs->gfx_afullscreen ? prefs->gfx_height_fs : prefs->gfx_height_win;
+#endif
 }
 
 static void fixup_prefs_joysticks (struct uae_prefs *prefs)
@@ -237,7 +247,7 @@ static void fix_options (void)
     }
     if (currprefs.comp_hardflush < 0 || currprefs.comp_hardflush > 1) {
 	write_log ("Bad value for comp_hardflush parameter: value must be within 0..1\n");
-	currprefs.comp_hardflush = 1;
+	currprefs.comp_hardflush = 0;	/* v18: soft is the default */
 	err = 1;
     }
     if (currprefs.comp_constjump < 0 || currprefs.comp_constjump > 1) {
@@ -379,12 +389,19 @@ static void show_version_full (void)
 static void parse_cmdline (int argc, char **argv)
 {
     int i;
+    /* v18: a configuration or disk image given on the command line (RunInUAE:
+     * "E-UAE -f game.uaerc_RunInUAE -0 game.adf", a config icon) starts the
+     * emulation directly, without waiting in the GUI - unless one of these
+     * configurations sets use_gui= itself (the GUI saves it). */
+    int direct = 0;
 
+    cfgfile_use_gui_seen = 0;
     for (i = 1; i < argc; i++) {
 	if (strcmp (argv[i], "-cfgparam") == 0) {
 	    if (i + 1 < argc)
 		i++;
 	} else if (strncmp (argv[i], "-config=", 8) == 0) {
+	    direct = 1;
 #ifdef FILESYS
 	    free_mountinfo (currprefs.mountinfo);
 #endif
@@ -396,6 +413,7 @@ static void parse_cmdline (int argc, char **argv)
 	    if (i + 1 == argc) {
 		write_log ("Missing argument for '-f' option.\n");
 	    } else {
+		direct = 1;
 #ifdef FILESYS
 		free_mountinfo (currprefs.mountinfo);
 #endif
@@ -421,10 +439,16 @@ static void parse_cmdline (int argc, char **argv)
 		int extra_arg = *arg == '\0';
 		if (extra_arg)
 		    arg = i + 1 < argc ? argv[i + 1] : 0;
+		if (argv[i][1] >= '0' && argv[i][1] <= '3' && arg && *arg)
+		    direct = 1;	/* disk image for DF0:-DF3: */
 		if (parse_cmdline_option (&currprefs, argv[i][1], (char*)arg) && extra_arg)
 		    i++;
 	    }
 	}
+    }
+    if (direct && !cfgfile_use_gui_seen && currprefs.start_gui) {
+	write_log ("Configuration/disk on the command line without use_gui= - starting without GUI\n");
+	currprefs.start_gui = 0;
     }
 }
 #endif

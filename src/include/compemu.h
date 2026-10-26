@@ -35,6 +35,7 @@ extern void comp_init(void);
 extern void comp_done(void);
 extern void build_comp(void);
 extern void compile_block(const cpu_history *pc_hist, int blocklen, int totcyles);
+extern int comp_trace_end(uae_u16 opcode, const cpu_history* pc_hist, int blocklen, uae_u8* next_pc_p);
 extern void comp_compile_error(void);
 extern uae_u16* comp_current_m68k_location(void);
 
@@ -42,6 +43,11 @@ extern cacheline cache_tags[];
 
 /* Preferences handling */
 void check_prefs_changed_comp(void);
+/* v18: set while the JIT loop runs; changes of the JIT settings that
+ * change the translated code are applied by the loop (see compemu_support.c) */
+extern int comp_run_loop_active;
+extern int comp_prefs_pending;
+void comp_apply_pending_prefs(void);
 
 struct blockinfo_t;
 
@@ -61,6 +67,9 @@ typedef struct blockinfo_t
 
     struct blockinfo_t* next;		/* Pointer to the next block in active/dormant list */
     struct blockinfo_t* prev;		/* Pointer to the previous block in active/dormant list */
+
+	uae_u8* code_end;			/* v18: end of the translated code (TODO 5.18) */
+	uae_u8 memfb_recompiles;	/* v18: retranslations because of special memory hits */
 } blockinfo;
 
 /* Mapped PowerPC register type
@@ -96,11 +105,12 @@ typedef struct comp_exception_data_t
  * http://www.nondot.org/sabre/os/articles/ProcessorArchitecture
  *
  * Volatile registers:
- *    r0, r3-r12, r13 (we don't use small data),
+ *    r0, r3-r12,
  *    f0-f13
  *    XER, CTR, CR0-1, CR5-7, LR
  * Non-volatile registers:
  *    r1 (stack),
+ *    r13 (small data area pointer - never touched, v18),
  *    r14-r30,
  *    f14-f31, FPSCR (let's preserve it)
  * Non-usable registers:
@@ -109,11 +119,9 @@ typedef struct comp_exception_data_t
  *    CR2-4 (NOTE: actually, CR2 is used by the interpretive)
  */
 
-#ifdef __APPLE__
-#warning Assuming Darwin PowerPC ABI
-#else
-#warning Assuming SysV PowerPC ABI
-#endif
+/* __APPLE__: Darwin PowerPC ABI, otherwise SysV PowerPC ABI (AmigaOS 4,
+ * MorphOS, Linux). (v18: was a #warning, which added one compiler
+ * warning per JIT source file to every build.) */
 
 /* Convert a PowerPC register number to mapped register typed data */
 #define PPCR_MAPPED_REG(x) ((comp_ppc_reg){.r = (x)})
@@ -152,7 +160,12 @@ typedef struct comp_exception_data_t
 #define PPCR_TMP8	11	// r11
 #define PPCR_TMP9	12	// r12
 #ifndef __APPLE__
-#define PPCR_TMP10	13	// r13
+/* v18: was r13. In the SysV ABI (and on AmigaOS 4) r13 is the small data
+ * area pointer: code compiled by GCC addresses small global variables through
+ * it. The JIT used it as a free temporary register, so a C function called
+ * from translated code while r13 held a 68k value read and wrote the wrong
+ * memory. r18 is non-volatile and is saved in the prolog of every block. */
+#define PPCR_TMP10	18	// r18
 #else
 #define PPCR_TMP10	2	// r2
 #endif
@@ -181,6 +194,18 @@ typedef struct comp_exception_data_t
 
 //Mapped registers
 #define PPCR_REGS_BASE_MAPPED PPCR_MAPPED_REG(PPCR_REGS_BASE)
+
+/* v18: start of the baseaddr[] array (direct memory access) in a fixed
+ * register, loaded at the start of every translated block (TODO 7.2);
+ * saves two instructions per memory access. SysV only. */
+#ifndef __APPLE__
+#define PPCR_BASEADDR	19	// r19
+#define PPCR_BASEADDR_MAPPED PPCR_MAPPED_REG(PPCR_BASEADDR)
+/* v18: address of the fallback stub for the checked direct memory access
+ * (TODO 5.15), loaded at the start of every block */
+#define PPCR_MEMFB	20	// r20
+#define PPCR_MEMFB_MAPPED PPCR_MAPPED_REG(PPCR_MEMFB)
+#endif
 
 /* M68k flags register: while the flags are emulated those are stored
  * in this register, the layout is detailed in PPCR_FLAG_* constants.
@@ -277,11 +302,15 @@ typedef struct comp_exception_data_t
  * This macro can be used to mark registers for Prolog/Epilog compiling */
 #define PPCR_REG_BIT(x) (1 << (x))
 
-/* The used non-volatile registers in a bit masp for saving/restoring */
+/* The used non-volatile registers in a bit masp for saving/restoring
+ * (v18: plus the temporary register r18 on SysV, see PPCR_TMP10) */
+#ifndef __APPLE__
+#define PPCR_REG_USED_NONVOLATILE	(PPCR_REG_BIT(PPCR_REGS_BASE) | PPCR_REG_BIT(PPCR_FLAGS) | PPCR_REG_BIT(PPCR_TMP10) | PPCR_REG_BIT(PPCR_BASEADDR) | PPCR_REG_BIT(PPCR_MEMFB))
+#define PPCR_REG_USED_NONVOLATILE_NUM 5
+#else
 #define PPCR_REG_USED_NONVOLATILE	(PPCR_REG_BIT(PPCR_REGS_BASE) | PPCR_REG_BIT(PPCR_FLAGS))
-
-/* The number of used non-volatile registers for saving/restoring */
 #define PPCR_REG_USED_NONVOLATILE_NUM 2
+#endif
 
 /* Some function protos */
 STATIC_INLINE blockinfo* get_blockinfo(uae_u32 cl);
@@ -343,6 +372,7 @@ void comp_ppc_branch_target(int reference);
 void comp_ppc_b(uae_u32 target, int reference);
 void comp_ppc_bc(int bibo, int reference);
 void comp_ppc_bctr(void);
+void comp_ppc_bctrl(void);
 void comp_ppc_bl(uae_u32 target);
 void comp_ppc_blr(void);
 void comp_ppc_blrl(void);
@@ -363,13 +393,11 @@ void comp_ppc_lwz(comp_ppc_reg regd, uae_u16 delta, comp_ppc_reg rega);
 void comp_ppc_lwzx(comp_ppc_reg regd, comp_ppc_reg rega, comp_ppc_reg regb);
 void comp_ppc_mcrxr(int crreg);
 void comp_ppc_mfcr(comp_ppc_reg reg);
-#ifdef _ARCH_PWR4
-void comp_ppc_mfocrf(int crreg, comp_ppc_reg reg);
-#endif
 void comp_ppc_mflr(comp_ppc_reg reg);
 void comp_ppc_mfxer(comp_ppc_reg reg);
 void comp_ppc_mr(comp_ppc_reg rega, comp_ppc_reg regs, BOOL updateflags);
 void comp_ppc_mtcrf(int crreg, comp_ppc_reg regf);
+void comp_ppc_mtcr(comp_ppc_reg regf);
 void comp_ppc_mtctr(comp_ppc_reg reg);
 void comp_ppc_mtlr(comp_ppc_reg reg);
 void comp_ppc_mtxer(comp_ppc_reg reg);
@@ -428,6 +456,42 @@ void comp_ppc_exception(uae_u8 level, comp_exception_data* exception_data);
 void comp_ppc_save_mapped_registers_from_list(uae_s8* mapped_regs);
 void comp_ppc_save_flags(void);
 void comp_ppc_load_pc(uae_u32 pc_address, uae_u32 location);
+
+/* v18: CPU features detected at run time (compemu_support.c) */
+extern BOOL comp_ppc_native_mcrxr;
+/* v18: adds the 68k register dependency (DX/AX) for every temporary
+ * register in the mask that is mapped to a 68k register */
+uae_u64 comp_mapped_reg_deps(uae_u64 regs);
+void comp_ppc_detect_cpu(void);
+
+/* v18: checked direct memory access (see compemu_support.c) */
+#define COMP_MEMFB_SIZE_BYTE	1
+#define COMP_MEMFB_SIZE_WORD	2
+#define COMP_MEMFB_SIZE_LONG	3
+#define COMP_MEMFB_WRITE		(1 << 13)
+#define COMP_MEMFB_SIGNEXT		(1 << 14)
+BOOL comp_memfb_reg_ok(int reg);
+uae_uintptr comp_memfb_stub(void);
+void comp_memfb_pending_reset(void);
+void comp_memfb_emit_pending(void);
+void comp_memfb_branch(void);
+void comp_memfb_back(uae_u32 desc);
+uae_u8* comp_memfb_scratch(void);
+void comp_memfb_fallback(uae_u32* slots, uae_u32 desc);
+
+/* v18: block chaining (TODO 7.1) and fixed 68k registers (TODO 7.4) */
+BOOL comp_chain_is_active(void);
+void comp_ppc_block_setup(void);
+BOOL comp_chain_check_entry(uae_u8* block_start);
+void comp_ppc_leave_to(uae_uintptr func);
+void comp_ppc_block_exit(int cycles);
+void comp_fixregs_select(void);
+BOOL comp_fixregs_active(void);
+void comp_fixregs_emit_load(void);
+void comp_fixregs_emit_store(void);
+uae_u64 comp_fixregs_deps(void);
+BOOL comp_fixregs_is_fixed(int regnum);
+uae_u32 comp_nonvol_regs(void);
 #endif
 
 /* I wonder why we don't have these defined globally. */

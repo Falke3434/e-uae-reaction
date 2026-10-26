@@ -4267,6 +4267,21 @@ static void vsync_handler (void)
     	gui_data.jitled = 0xf00;
     }
 
+    //v18: share of the translated block runs for the status line of the
+    //GUI, over 25 frames (TODO 2.4)
+    {
+	static uae_u64 jit_sum_compiled, jit_sum_all;
+	static int jit_frames;
+	jit_sum_compiled += jit_indicator_compiled_executed;
+	jit_sum_all += jit_indicator_compiled_executed + jit_indicator_interpreted_executed;
+	if (++jit_frames >= 25)
+	{
+	    gui_data.jitpct = (cache_enabled && jit_sum_all) ? (int) (jit_sum_compiled * 100 / jit_sum_all) : -1;
+	    jit_sum_compiled = jit_sum_all = 0;
+	    jit_frames = 0;
+	}
+    }
+
     jit_indicator_compiled_executed = 0;
     jit_indicator_interpreted_executed = 0;
 #endif

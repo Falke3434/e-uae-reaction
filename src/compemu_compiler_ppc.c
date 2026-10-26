@@ -38,7 +38,7 @@ union comp_compiler_mb_union* macroblocks;
  *   ir - input registers
  *   or - output registers
  */
-#define comp_mb_init(n, h, ir, or) union comp_compiler_mb_union* n = comp_compiler_get_next_macroblock(); if(n == NULL) { comp_compile_error(); return; } n->base.handler=(h); n->base.input_registers=(ir); n->base.output_registers=(or); n->base.name = __func__; n->base.start = NULL; n->base.m68k_ptr = comp_current_m68k_location(); n->base.remove = FALSE;
+#define comp_mb_init(n, h, ir, or) union comp_compiler_mb_union* n = comp_compiler_get_next_macroblock(); if(n == NULL) { comp_compile_error(); return; } n->base.handler=(h); n->base.input_registers=comp_mapped_reg_deps(ir); n->base.output_registers=comp_mapped_reg_deps(or); n->base.name = __func__; n->base.start = NULL; n->base.m68k_ptr = comp_current_m68k_location(); n->base.remove = FALSE;
 
 //Pointer to the end of the macroblock buffer
 int macroblock_ptr;
@@ -55,6 +55,18 @@ void comp_macroblock_impl_load_memory_word(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_load_memory_word_extended(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_load_memory_byte(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_map_physical_mem(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_load_memory_checked(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_save_memory_checked(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_stack_frame_alloc(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_stack_frame_free(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_shift_count(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_mull(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bcd(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bitfield_reg(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bitfield_mem(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bitfield_mark_low_byte(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bitfield_skip_low_byte(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_bitfield_skip_target(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_save_memory_spec(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_save_memory_long(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_save_memory_word(union comp_compiler_mb_union* mb);
@@ -74,6 +86,9 @@ void comp_macroblock_impl_negate_with_overflow(union comp_compiler_mb_union* mb)
 void comp_macroblock_impl_copy_register_long_with_flags(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_copy_register_long(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_opcode_unsupported(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_fixregs_store(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_fpu(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_fixregs_load(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_and_low_register_imm(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_and_high_register_imm(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_and_register_register(union comp_compiler_mb_union* mb);
@@ -126,6 +141,8 @@ void comp_macroblock_impl_nop(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_null_operation(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_load_pc_from_immediate_conditional(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_load_pc_from_immediate_conditional_decrement_register(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_trace_exit(union comp_compiler_mb_union* mb);
+void comp_macroblock_impl_trace_dbcc(union comp_compiler_mb_union* mb);
 void comp_macroblock_impl_check_word_in_memory(union comp_compiler_mb_union* mb);
 
 /**
@@ -133,6 +150,14 @@ void comp_macroblock_impl_check_word_in_memory(union comp_compiler_mb_union* mb)
  */
 STATIC_INLINE void helper_access_memory_spec(union comp_compiler_mb_union* mb, int iswrite);
 STATIC_INLINE void helper_map_physical_mem(comp_ppc_reg inreg, comp_ppc_reg outreg, comp_ppc_reg tmpreg);
+STATIC_INLINE void helper_load_baseaddr_checked(comp_ppc_reg inreg, comp_ppc_reg tmpreg);
+STATIC_INLINE void helper_call_memfb_stub(uae_u32 desc);
+
+/* v18: CR field for the bit 0 test of baseaddr[] in checked memory
+ * accesses. CR7 is volatile and not used otherwise by the JIT (CR0 and XER
+ * hold the internal flags, CR1/CR2 are temporaries of other macroblocks). */
+#define PPCR_CR_MEMCHECK	7
+#define PPC_B_CR7_NE		0x009E	//0b0010011110: BO=00100 (branch if false), BI=30 (CR7 EQ)
 STATIC_INLINE void helper_division_by_zero_check(BOOL signed_division, comp_ppc_reg dividend_reg, comp_exception_data* exception_data);
 STATIC_INLINE void helper_divide_32_bit(BOOL signed_division, comp_ppc_reg quotient_reg, comp_ppc_reg dividend_reg, comp_ppc_reg divisor_reg, BOOL check_overflow);
 
@@ -364,16 +389,60 @@ void comp_compiler_debug_dump_compiled()
  * Parameters:
  *    opcode - unsupported opcode number
  */
+/**
+ * Macroblocks: v18 (TODO 7.4): write the fixed 68k registers back to
+ * regs.regs[] / load them again, around code that uses regs.regs[]
+ * (interpreter, C helpers, MOVEM through the bank handlers).
+ * Nothing when the fixed registers are not active.
+ */
+void comp_macroblock_impl_fixregs_store(union comp_compiler_mb_union* mb)
+{
+	comp_fixregs_emit_store();
+}
+
+void comp_macroblock_impl_fixregs_load(union comp_compiler_mb_union* mb)
+{
+	comp_fixregs_emit_load();
+}
+
+void comp_macroblock_push_fixregs_store(void)
+{
+	if (!comp_fixregs_active()) return;
+	{
+		comp_mb_init(mb,
+					comp_macroblock_impl_fixregs_store,
+					comp_fixregs_deps(),
+					COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	}
+}
+
+void comp_macroblock_push_fixregs_load(void)
+{
+	if (!comp_fixregs_active()) return;
+	{
+		comp_mb_init(mb,
+					comp_macroblock_impl_fixregs_load,
+					COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
+					comp_fixregs_deps() | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	}
+}
+
 void comp_macroblock_push_opcode_unsupported(uae_u16 opcode)
 {
 	//Before the call write back the M68k registers and clear the temp register mapping
 	comp_flush_temp_registers(FALSE);
+	comp_macroblock_push_fixregs_store();
 
-	comp_mb_init(mb,
-				comp_macroblock_impl_opcode_unsupported,
-				COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
-				COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
-	mb->unsupported.opcode = opcode;
+	{
+		comp_mb_init(mb,
+					comp_macroblock_impl_opcode_unsupported,
+					COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM,
+					COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+		mb->unsupported.opcode = opcode;
+	}
+
+	//The interpreter may have changed any register
+	comp_macroblock_push_fixregs_load();
 }
 
 void comp_macroblock_impl_opcode_unsupported(union comp_compiler_mb_union* mb)
@@ -1026,19 +1095,227 @@ void comp_macroblock_impl_map_physical_mem(union comp_compiler_mb_union* mb)
  */
 STATIC_INLINE void helper_map_physical_mem(comp_ppc_reg inreg, comp_ppc_reg outreg, comp_ppc_reg tmpreg)
 {
-	//TODO: preload base address array start into a GPR
-	//Load base address array address to tmp reg
-	comp_ppc_liw(tmpreg, (uae_u32)baseaddr);
+	//Get the baseaddr[] entry of the bank into tmpreg (and its bit 0 into CR7)
+	helper_load_baseaddr_checked(inreg, tmpreg);
 
-	//Get 64k page index into R0: R0 = (inreg >> 14) & 0x3fffc;
-	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, inreg, 18, 14, 29, FALSE);
-
-	//Load base address for the memory block to temp reg: rtmp = rtmp[r0]
-	comp_ppc_lwzx(tmpreg, tmpreg, PPCR_SPECTMP_MAPPED);
+	//v18: bit 0 set = special bank, no direct host address. Only MOVEM
+	//and MOVE16 still map an address without the checked access macroblocks
+	//(several accesses relative to one mapped address): point them to a
+	//scratch area instead of into the addrbank structure. No crash, but the
+	//data of such an access is lost (write) or undefined (read).
+	comp_ppc_bc(PPC_B_CR7_NE, 0);
 
 	//TODO: base and offset could be sent separately and used in instruction code
 	//Sum address and offset to outreg: outreg = inreg + rtmp
 	comp_ppc_add(outreg, inreg, tmpreg, FALSE);
+	comp_ppc_b(0, 1);
+
+	comp_ppc_branch_target(0);
+	comp_ppc_liw(outreg, (uae_u32) comp_memfb_scratch());
+
+	comp_ppc_branch_target(1);
+}
+
+/**
+ * v18: loads baseaddr[] of the bank of the address in inreg into tmpreg
+ * and sets CR7 to "not equal" if bit 0 of it is set (special bank).
+ * Uses r0 (PPCR_SPECTMP). CR0 and XER (the internal flags) are not touched.
+ */
+STATIC_INLINE void helper_load_baseaddr_checked(comp_ppc_reg inreg, comp_ppc_reg tmpreg)
+{
+	//Get 64k page index into R0: R0 = (inreg >> 14) & 0x3fffc;
+	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, inreg, 18, 14, 29, FALSE);
+
+#ifdef PPCR_BASEADDR
+	//v18: the start of baseaddr[] is kept in a fixed register (TODO 7.2)
+	comp_ppc_lwzx(tmpreg, PPCR_BASEADDR_MAPPED, PPCR_SPECTMP_MAPPED);
+#else
+	//Load base address array address to tmp reg, then rtmp = rtmp[r0]
+	comp_ppc_liw(tmpreg, (uae_u32)baseaddr);
+	comp_ppc_lwzx(tmpreg, tmpreg, PPCR_SPECTMP_MAPPED);
+#endif
+
+	//Bit 0 into CR7: r0 = rtmp & 1, compare with 0
+	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, tmpreg, 0, 31, 31, FALSE);
+	comp_ppc_cmplwi(PPCR_CR_MEMCHECK, PPCR_SPECTMP_MAPPED, 0);
+}
+
+/**
+ * v18: emits the call of the fallback stub for a checked direct memory
+ * access (see comp_memfb_fallback() in compemu_support.c)
+ */
+STATIC_INLINE void helper_call_memfb_stub(uae_u32 desc)
+{
+	comp_ppc_liw(PPCR_SPECTMP_MAPPED, (uae_u32) comp_memfb_stub());
+	comp_ppc_mtctr(PPCR_SPECTMP_MAPPED);
+	comp_ppc_li(PPCR_SPECTMP_MAPPED, (uae_u16) desc);
+	comp_ppc_bctrl();
+}
+
+
+
+/**
+ * Macroblock: v18: reads memory through a direct host address, but checks
+ * bit 0 of baseaddr[] first: for a special bank the access goes through the
+ * bank handlers (fallback stub). Replaces map_physical_mem + load_memory_*.
+ * Parameters:
+ *    output_reg - register for the result
+ *    addr_reg - 68k address
+ *    temp_reg - temporary register, trashed (must differ from addr_reg)
+ *    size - 1, 2, 4, or -2 for a sign extended word
+ */
+void comp_macroblock_push_load_memory_checked(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg output_reg, comp_ppc_reg addr_reg, comp_ppc_reg temp_reg, int size)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_load_memory_checked,
+				regsin, regsout);
+	mb->access_memory_checked.output_reg = output_reg;
+	mb->access_memory_checked.base_reg = addr_reg;
+	mb->access_memory_checked.temp_reg = temp_reg;
+	mb->access_memory_checked.size = size;
+}
+
+void comp_macroblock_impl_load_memory_checked(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg dest = mb->access_memory_checked.output_reg;
+	comp_ppc_reg addr = mb->access_memory_checked.base_reg;
+	comp_ppc_reg tmp = mb->access_memory_checked.temp_reg;
+	uae_u32 desc;
+
+	if (tmp.r == addr.r || tmp.r == 0 || addr.r == 0 || dest.r == 0
+		|| !comp_memfb_reg_ok(dest.r) || !comp_memfb_reg_ok(addr.r))
+	{
+		write_log("JIT: Compiling error: checked memory read with registers %d, %d, %d\n", dest.r, addr.r, tmp.r);
+		comp_compile_error();
+		return;
+	}
+
+	helper_load_baseaddr_checked(addr, tmp);
+#ifdef PPCR_MEMFB
+	comp_memfb_branch();
+#else
+	comp_ppc_bc(PPC_B_CR7_NE, 0);
+#endif
+
+	//Direct: tmp = host address, load
+	comp_ppc_add(tmp, addr, tmp, FALSE);
+	switch (mb->access_memory_checked.size)
+	{
+	case 4:  comp_ppc_lwz(dest, 0, tmp); desc = COMP_MEMFB_SIZE_LONG << 10; break;
+	case 2:  comp_ppc_lhz(dest, 0, tmp); desc = COMP_MEMFB_SIZE_WORD << 10; break;
+	case -2: comp_ppc_lha(dest, 0, tmp); desc = (COMP_MEMFB_SIZE_WORD << 10) | COMP_MEMFB_SIGNEXT; break;
+	default: comp_ppc_lbz(dest, 0, tmp); desc = COMP_MEMFB_SIZE_BYTE << 10; break;
+	}
+#ifdef PPCR_MEMFB
+	//Special bank: through the bank handler (code behind the block)
+	comp_memfb_back(desc | (addr.r << 5) | dest.r);
+#else
+	comp_ppc_b(0, 1);
+
+	//Special bank: through the bank handler
+	comp_ppc_branch_target(0);
+	helper_call_memfb_stub(desc | (addr.r << 5) | dest.r);
+
+	comp_ppc_branch_target(1);
+#endif
+}
+
+/**
+ * Macroblock: v18: writes memory through a direct host address with the
+ * bit 0 check of comp_macroblock_push_load_memory_checked().
+ * Parameters:
+ *    source_reg - value to write
+ *    addr_reg - 68k address
+ *    temp_reg - temporary register, trashed (must differ from addr_reg and source_reg)
+ *    size - 1, 2 or 4
+ */
+void comp_macroblock_push_save_memory_checked(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg source_reg, comp_ppc_reg addr_reg, comp_ppc_reg temp_reg, int size)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_save_memory_checked,
+				regsin, regsout);
+	mb->access_memory_checked.output_reg = source_reg;
+	mb->access_memory_checked.base_reg = addr_reg;
+	mb->access_memory_checked.temp_reg = temp_reg;
+	mb->access_memory_checked.size = size;
+}
+
+void comp_macroblock_impl_save_memory_checked(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg src = mb->access_memory_checked.output_reg;
+	comp_ppc_reg addr = mb->access_memory_checked.base_reg;
+	comp_ppc_reg tmp = mb->access_memory_checked.temp_reg;
+	uae_u32 desc;
+
+	if (tmp.r == addr.r || tmp.r == src.r || tmp.r == 0 || addr.r == 0 || src.r == 0
+		|| !comp_memfb_reg_ok(src.r) || !comp_memfb_reg_ok(addr.r))
+	{
+		write_log("JIT: Compiling error: checked memory write with registers %d, %d, %d\n", src.r, addr.r, tmp.r);
+		comp_compile_error();
+		return;
+	}
+
+	helper_load_baseaddr_checked(addr, tmp);
+#ifdef PPCR_MEMFB
+	comp_memfb_branch();
+#else
+	comp_ppc_bc(PPC_B_CR7_NE, 0);
+#endif
+
+	//Direct: tmp = host address, store
+	comp_ppc_add(tmp, addr, tmp, FALSE);
+	switch (mb->access_memory_checked.size)
+	{
+	case 4:  comp_ppc_stw(src, 0, tmp); desc = COMP_MEMFB_SIZE_LONG << 10; break;
+	case 2:  comp_ppc_sth(src, 0, tmp); desc = COMP_MEMFB_SIZE_WORD << 10; break;
+	default: comp_ppc_stb(src, 0, tmp); desc = COMP_MEMFB_SIZE_BYTE << 10; break;
+	}
+#ifdef PPCR_MEMFB
+	comp_memfb_back(desc | COMP_MEMFB_WRITE | (addr.r << 5) | src.r);
+#else
+	comp_ppc_b(0, 1);
+
+	//Special bank: through the bank handler
+	comp_ppc_branch_target(0);
+	helper_call_memfb_stub(desc | COMP_MEMFB_WRITE | (addr.r << 5) | src.r);
+
+	comp_ppc_branch_target(1);
+#endif
+}
+
+/**
+ * Macroblock: v18: allocates a SysV stack frame (stwu r1,-size(r1))
+ * for saving temporary registers around a function call
+ */
+void comp_macroblock_push_stack_frame_alloc(uae_u16 size)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_stack_frame_alloc,
+				COMP_COMPILER_MACROBLOCK_REG_NONE,
+				COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	mb->stack_frame.size = size;
+}
+
+void comp_macroblock_impl_stack_frame_alloc(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_stwu(PPCR_SP_MAPPED, (uae_u16) -mb->stack_frame.size, PPCR_SP_MAPPED);
+}
+
+/**
+ * Macroblock: v18: frees a stack frame of comp_macroblock_push_stack_frame_alloc()
+ */
+void comp_macroblock_push_stack_frame_free(uae_u16 size)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_stack_frame_free,
+				COMP_COMPILER_MACROBLOCK_REG_NONE,
+				COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	mb->stack_frame.size = size;
+}
+
+void comp_macroblock_impl_stack_frame_free(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_addi(PPCR_SP_MAPPED, PPCR_SP_MAPPED, mb->stack_frame.size);
 }
 
 /**
@@ -1210,8 +1487,10 @@ STATIC_INLINE void helper_access_memory_spec(union comp_compiler_mb_union* mb, i
 		}
 		break;
 	default:
-		write_log("JIT error: unknown memory write size: %d\n", mb->access_memory_size.size);
-		abort();
+		//v18: was abort()
+		write_log("JIT: Compiling error: unknown memory access size: %d\n", mb->access_memory_size.size);
+		comp_compile_error();
+		return;
 	}
 
 	//Load the address of the handler to PPCR_TMP2
@@ -1646,30 +1925,11 @@ void comp_macroblock_push_copy_nzcv_flags_to_register(uae_u64 regsout, comp_ppc_
 
 void comp_macroblock_impl_copy_nzcv_flags_to_register(union comp_compiler_mb_union* mb)
 {
-#ifdef _ARCH_PWR4
-	if (mb->one_reg_opcode.reg.r != PPCR_SPECTMP_MAPPED.r) {
-		//Copy XER to PPCR_SPECTMP
-		comp_ppc_mfxer(PPCR_SPECTMP_MAPPED);
-		//Copy CR0 to the output register (N, Z)
-		comp_ppc_mfocrf(PPCR_CR_TMP0, mb->one_reg_opcode.reg);
-		//Insert the XER bits into the output register (C, V)
-		comp_ppc_rlwimi(mb->one_reg_opcode.reg, PPCR_SPECTMP_MAPPED, 24, 8, 11, FALSE);
-	} else {
-		//Copy XER to the output register
-		comp_ppc_mfxer(mb->one_reg_opcode.reg);
-		//Insert the XER bits into the output register (C, V)
-		comp_ppc_rlwimi(mb->one_reg_opcode.reg, mb->one_reg_opcode.reg, 24, 8, 11, FALSE);
-		//Copy the XER bits into CR2
-		comp_ppc_mtcrf(PPCR_CR_TMP2, mb->one_reg_opcode.reg);
-		//Copy CR0-7 to the output register
-		comp_ppc_mfcr(mb->one_reg_opcode.reg);
-	}
-#else
-	//Copy XER to CR2
+	//Copy XER to CR2 (v18: comp_ppc_mcrxr() decides at run time
+	//between mcrxr and its replacement; was _ARCH_PWR4 at compile time)
 	comp_ppc_mcrxr(PPCR_CR_TMP2);
 	//Copy CR0-7 to the output register
 	comp_ppc_mfcr(mb->one_reg_opcode.reg);
-#endif
 }
 
 /**
@@ -1687,11 +1947,7 @@ void comp_macroblock_push_copy_nz_flags_to_register(uae_u64 regsout, comp_ppc_re
 
 void comp_macroblock_impl_copy_nz_flags_to_register(union comp_compiler_mb_union* mb)
 {
-#ifdef _ARCH_PWR4
-	comp_ppc_mfocrf(PPCR_CR_TMP0, mb->one_reg_opcode.reg);
-#else
-	comp_ppc_mfcr(mb->one_reg_opcode.reg);
-#endif
+	comp_ppc_mfcr(mb->one_reg_opcode.reg);	//v18: mfocrf only in PWR4 builds, mfcr works everywhere
 }
 
 /**
@@ -2107,9 +2363,12 @@ void comp_macroblock_impl_arithmetic_left_shift_extract_v_flag(union comp_compil
  */
 void comp_macroblock_push_shift_extract_c_flag(uae_u64 regsin, comp_ppc_reg input_reg, comp_ppc_reg shift_reg, BOOL left_shift)
 {
+	//v18: C is only changed if the shift count is not zero: the
+	//previous C (cleared before) is an input, otherwise the optimizer
+	//removes the clearing
 	comp_mb_init(mb,
 				comp_macroblock_impl_shift_extract_c_flag,
-				regsin,
+				regsin | COMP_COMPILER_MACROBLOCK_REG_FLAGC,
 				COMP_COMPILER_MACROBLOCK_REG_FLAGC);
 	mb->extract_c_flag_shift.input_reg = input_reg;
 	mb->extract_c_flag_shift.shift_reg = shift_reg;
@@ -2151,10 +2410,12 @@ void comp_macroblock_impl_shift_extract_c_flag(union comp_compiler_mb_union* mb)
  */
 void comp_macroblock_push_shift_extract_cx_flag(uae_u64 regsin, comp_ppc_reg input_reg, comp_ppc_reg shift_reg, BOOL left_shift)
 {
+	//v18: X stays unchanged for a shift count of zero, so the previous
+	//X is an input (before, the optimizer removed the loading of X)
 	comp_mb_init(mb,
 				comp_macroblock_impl_shift_extract_cx_flag,
-				regsin | COMP_COMPILER_MACROBLOCK_REG_FLAGC,
-				COMP_COMPILER_MACROBLOCK_REG_FLAGX);
+				regsin | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGX,
+				COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGX);
 	mb->extract_c_flag_shift.shift_reg = shift_reg;
 	mb->extract_c_flag_shift.input_reg = input_reg;
 	mb->extract_c_flag_shift.left_shift = left_shift;
@@ -2506,6 +2767,125 @@ void comp_macroblock_impl_load_pc_from_immediate_conditional_decrement_register(
 	comp_ppc_stw(address_reg, COMP_GET_OFFSET_IN_REGS(pc_oldp), PPCR_REGS_BASE_MAPPED);
 }
 
+/**
+ * v18 (TODO 7.5): leaving a block from the middle (the other path of a
+ * conditional branch inside the block): write back the changed mapped 68k
+ * registers and the flags, set the PC to the exit address and continue
+ * like at the end of a block (chaining stub). The temporary registers are
+ * free to use here: their 68k values are written back first.
+ */
+static void helper_trace_exit_code(struct comp_compiler_mb_trace_exit* te)
+{
+	comp_ppc_save_mapped_registers_from_list(te->mapped_regs);
+	comp_ppc_save_flags();
+	comp_ppc_liw(PPCR_PARAM1_MAPPED, te->exit_address);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_GET_OFFSET_IN_REGS(pc), PPCR_REGS_BASE_MAPPED);
+	helper_map_physical_mem(PPCR_PARAM1_MAPPED, PPCR_PARAM1_MAPPED, PPCR_PARAM2_MAPPED);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_GET_OFFSET_IN_REGS(pc_p), PPCR_REGS_BASE_MAPPED);
+	comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_GET_OFFSET_IN_REGS(pc_oldp), PPCR_REGS_BASE_MAPPED);
+	comp_ppc_block_exit(te->cycles);
+}
+
+/* Cycles charged when a block is left in the middle, set by compile_block() */
+int comp_trace_exit_cycles = 0;
+
+/**
+ * v18: dependencies of code that leaves the block in the middle (or calls
+ * the exception handler): all flags and every changed mapped 68k register,
+ * so that the optimizer keeps their values up to this point.
+ */
+uae_u64 comp_exit_deps(void)
+{
+	uae_s8 list[16];
+	uae_u64 deps = COMP_COMPILER_MACROBLOCK_REG_FLAG_ALL;
+	int i;
+
+	comp_get_changed_mapped_regs_list(list);
+	for (i = 0; i < 16; i++)
+		if (list[i] != -1)
+			deps |= COMP_COMPILER_MACROBLOCK_REG_DX_OR_AX(i);
+
+	//v18 (TODO 7.4): the fixed registers are written back when the
+	//translated code is left (or around the exception handler)
+	return deps | comp_fixregs_deps();
+}
+
+/**
+ * Macroblock: v18 (TODO 7.5): Bcc or DBF inside a block. The condition is
+ * in CR0 (see comp_macroblock_push_load_pc_from_immediate_conditional());
+ * exit_bibo is the condition for leaving the block to exit_address.
+ */
+void comp_macroblock_push_trace_exit(int exit_bibo, uae_u32 exit_address)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_trace_exit,
+				COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ | comp_exit_deps(),
+				COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	mb->trace_exit.exit_bibo = exit_bibo;
+	mb->trace_exit.exit_address = exit_address;
+	mb->trace_exit.cycles = comp_trace_exit_cycles;
+	comp_get_changed_mapped_regs_list(mb->trace_exit.mapped_regs);
+}
+
+void comp_macroblock_impl_trace_exit(union comp_compiler_mb_union* mb)
+{
+	//Stay in the block: skip the exit code
+	comp_ppc_bc(mb->trace_exit.exit_bibo ^ 0x100, 3);
+	helper_trace_exit_code(&mb->trace_exit);
+	comp_ppc_branch_target(3);
+}
+
+/**
+ * Macroblock: v18 (TODO 7.5): DBcc inside a block, same as
+ * comp_macroblock_push_load_pc_from_immediate_conditional_decrement_register(),
+ * but the block continues on the path of the interpreter (follow_taken:
+ * at the branch target) and the other path leaves the block.
+ */
+void comp_macroblock_push_trace_dbcc(uae_u64 regsin, comp_ppc_reg decrement_reg, comp_ppc_reg tmp_reg, BOOL negate, BOOL follow_taken, uae_u32 exit_address)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_trace_dbcc,
+				regsin | COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ | comp_exit_deps(),
+				regsin | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	mb->trace_exit.decrement_reg = decrement_reg;
+	mb->trace_exit.tmp_reg = tmp_reg;
+	mb->trace_exit.negate = negate;
+	mb->trace_exit.follow_taken = follow_taken;
+	mb->trace_exit.exit_address = exit_address;
+	mb->trace_exit.cycles = comp_trace_exit_cycles;
+	comp_get_changed_mapped_regs_list(mb->trace_exit.mapped_regs);
+}
+
+void comp_macroblock_impl_trace_dbcc(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg tmp_reg = mb->trace_exit.tmp_reg;
+	comp_ppc_reg decrement_reg = mb->trace_exit.decrement_reg;
+
+	//Condition true: no branch (same test as the DBcc macroblock above)
+	comp_ppc_bc(mb->trace_exit.negate ? PPC_B_CR_TMP0_EQ : PPC_B_CR_TMP0_NE, 3);
+
+	//Decrement the low word, Z: the word was 0 (now -1: no branch)
+	comp_ppc_andi(tmp_reg, decrement_reg, 0xffff);
+	comp_ppc_addi(tmp_reg, tmp_reg, -1);
+	comp_ppc_rlwimi(decrement_reg, tmp_reg, 0, 16, 31, FALSE);
+	comp_ppc_bc(PPC_B_CR_TMP0_EQ, 4);
+
+	//Branch taken
+	if (mb->trace_exit.follow_taken)
+		comp_ppc_b(0, 5);
+	else
+		helper_trace_exit_code(&mb->trace_exit);
+
+	//No branch
+	comp_ppc_branch_target(3);
+	comp_ppc_branch_target(4);
+	if (mb->trace_exit.follow_taken)
+	{
+		helper_trace_exit_code(&mb->trace_exit);
+		comp_ppc_branch_target(5);
+	}
+}
+
 void comp_macroblock_push_set_byte_from_z_flag(uae_u64 regsout, comp_ppc_reg output_reg, BOOL negate)
 {
 	comp_mb_init(mb,
@@ -2649,7 +3029,7 @@ void comp_macroblock_push_division_32_16bit(uae_u64 regsin, uae_u64 regsout, com
 
 	comp_mb_init(mb,
 				comp_macroblock_impl_division_32_16bit,
-				regsin,
+				regsin | comp_exit_deps(),
 				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGV);
 	mb->division_two_reg_opcode.output_reg = output_reg;
 	mb->division_two_reg_opcode.dividend_reg = dividend_reg;
@@ -2731,7 +3111,7 @@ void comp_macroblock_push_division_32_32bit(uae_u64 regsin, uae_u64 regsout, com
 
 	comp_mb_init(mb,
 				comp_macroblock_impl_division_32_32bit,
-				regsin,
+				regsin | comp_exit_deps(),
 				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGV);
 	mb->division_three_reg_opcode.quotient_reg = quotient_reg;
 	mb->division_three_reg_opcode.remainder_reg = remainder_reg;
@@ -2798,7 +3178,7 @@ void comp_macroblock_push_division_32_32bit_no_remainder(uae_u64 regsin, uae_u64
 
 	comp_mb_init(mb,
 				comp_macroblock_impl_division_32_32bit_no_remainder,
-				regsin,
+				regsin | comp_exit_deps(),
 				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGV);
 
 	//Two register descriptor is hijacked a bit: only the needed fields are populated *tsk... tsk...*
@@ -2854,9 +3234,13 @@ void comp_macroblock_push_division_64_32bit(uae_u64 regsin, uae_u64 regsout, int
 	//Flush temporary registers
 	comp_flush_temp_registers(TRUE);
 
+	//v18 (TODO 7.4): the C function reads and writes regs.regs[]
+	comp_macroblock_push_fixregs_store();
+
+	{
 	comp_mb_init(mb,
 				comp_macroblock_impl_division_64_32bit,
-				regsin,
+				regsin | comp_exit_deps(),
 				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGV);
 
 	mb->division_64_bit_opcode.dividend_high_reg_num = dividend_high_reg_num;
@@ -2870,6 +3254,9 @@ void comp_macroblock_push_division_64_32bit(uae_u64 regsin, uae_u64 regsout, int
 	 //Next instruction will be used for the return address
 	mb->division_64_bit_opcode.exception_data.next_address = next_address;
 	mb->division_64_bit_opcode.exception_data.next_location = next_location;
+	}
+
+	comp_macroblock_push_fixregs_load();
 }
 
 void comp_macroblock_impl_division_64_32bit(union comp_compiler_mb_union* mb)
@@ -2927,11 +3314,7 @@ void comp_macroblock_impl_division_64_32bit(union comp_compiler_mb_union* mb)
 	comp_ppc_mr(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, TRUE);
 
 	//Save N and Z flags
-#ifdef _ARCH_PWR4
-	comp_ppc_mfocrf(PPCR_CR_TMP0, PPCR_SPECTMP_MAPPED);
-#else
-	comp_ppc_mfcr(PPCR_SPECTMP_MAPPED);
-#endif
+	comp_ppc_mfcr(PPCR_SPECTMP_MAPPED);	//v18: mfocrf only in PWR4 builds, mfcr works everywhere
 	comp_ppc_rlwimi(PPCR_FLAGS_MAPPED, PPCR_SPECTMP_MAPPED, 0, 0, 2, FALSE);
 
 	//End of the division instruction
@@ -3030,11 +3413,7 @@ STATIC_INLINE void helper_divide_32_bit(BOOL signed_division, comp_ppc_reg quoti
 	}
 
 	//Save N and Z flags
-#ifdef _ARCH_PWR4
-	comp_ppc_mfocrf(PPCR_CR_TMP0, PPCR_SPECTMP_MAPPED);
-#else
-	comp_ppc_mfcr(PPCR_SPECTMP_MAPPED);
-#endif
+	comp_ppc_mfcr(PPCR_SPECTMP_MAPPED);	//v18: mfocrf only in PWR4 builds, mfcr works everywhere
 	comp_ppc_rlwimi(PPCR_FLAGS_MAPPED, PPCR_SPECTMP_MAPPED, 0, 0, 2, FALSE);
 }
 
@@ -3296,3 +3675,1018 @@ void comp_macroblock_impl_negate_decimal(union comp_compiler_mb_union* mb)
 	//Insert the higher decimal digit into the destination
 	comp_ppc_rlwimi(output_reg, temp_reg, 0, 24, 27, FALSE);
 }
+
+/**
+ * Macroblock: v18: ASL/ASR/LSL/LSR/ROL/ROR/ROXL/ROXR with the shift
+ * count in a register, as the 68k does it: count = register modulo 64,
+ * a count larger than the operand size gives 0 (LSx, ASL), the sign
+ * (ASR) or a full rotation; C is the last bit shifted out (0 for a count
+ * of 0, ROXx: X), X = C unless the count is 0 (ROL/ROR: X unchanged),
+ * V for ASL: the most significant bit changed during the shift, else 0.
+ * The flags are written directly into the flag register.
+ * Uses r0, CR0 and CR1, CTR (ROXx).
+ * Parameters:
+ *    kind - COMP_SHIFT_* constant
+ *    size - 1, 2 or 4
+ *    dest_reg - data register (operand and result, only the low size bytes change)
+ *    count_reg - register with the shift count (may be the same as dest_reg)
+ *    t0-t3 - temporary registers, trashed
+ */
+void comp_macroblock_push_shift_count(uae_u64 regsin, uae_u64 regsout, int kind, int size, comp_ppc_reg dest_reg, comp_ppc_reg count_reg, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_shift_count,
+				regsin | COMP_COMPILER_MACROBLOCK_REG_FLAGX,
+				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGV | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGX
+				| COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGN | COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ);
+	mb->shift_count.dest_reg = dest_reg;
+	mb->shift_count.count_reg = count_reg;
+	mb->shift_count.temp_reg[0] = t0;
+	mb->shift_count.temp_reg[1] = t1;
+	mb->shift_count.temp_reg[2] = t2;
+	mb->shift_count.temp_reg[3] = t3;
+	mb->shift_count.kind = kind;
+	mb->shift_count.size = size;
+}
+
+void comp_macroblock_impl_shift_count(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg d = mb->shift_count.dest_reg;
+	comp_ppc_reg cnt = mb->shift_count.temp_reg[0];
+	comp_ppc_reg v = mb->shift_count.temp_reg[1];
+	comp_ppc_reg r = mb->shift_count.temp_reg[2];
+	comp_ppc_reg c = mb->shift_count.temp_reg[3];
+	comp_ppc_reg r0 = PPCR_SPECTMP_MAPPED;
+	comp_ppc_reg f = PPCR_FLAGS_MAPPED;
+	int kind = mb->shift_count.kind;
+	int n = mb->shift_count.size * 8;
+	int s = 32 - n;
+
+	//Count modulo 64
+	comp_ppc_andi(cnt, mb->shift_count.count_reg, 63);
+
+	//Clear N, Z, V and C in the flag register (X stays)
+	comp_ppc_liw(r0, ~((1U << PPCR_FLAG_N) | (1U << PPCR_FLAG_Z) | (1U << PPCR_FLAG_V) | (1U << PPCR_FLAG_C)));
+	comp_ppc_and(f, f, r0, FALSE);
+
+	switch (kind)
+	{
+	case COMP_SHIFT_ASL:
+	case COMP_SHIFT_LSL:
+		//v = operand in the top bits
+		if (s) comp_ppc_rlwinm(v, d, s, 0, 31 - s, FALSE); else comp_ppc_mr(v, d, FALSE);
+		//r = shifted (0 for a count >= 32, which covers count > size too)
+		comp_ppc_slw(r, v, cnt, FALSE);
+		//C = bit (32 - count) of v (0 for count 0 and count > size)
+		comp_ppc_subfic(r0, cnt, 32);
+		comp_ppc_srw(c, v, r0, FALSE);
+		comp_ppc_andi(c, c, 1);
+		if (kind == COMP_SHIFT_ASL)
+		{
+			//V: shifting back arithmetically must give the operand
+			comp_ppc_sraw(r0, r, cnt, FALSE);
+			comp_ppc_xor(r0, r0, v, FALSE);
+			comp_ppc_cntlzw(r0, r0, FALSE);
+			comp_ppc_rlwinm(r0, r0, 27, 31, 31, FALSE);	//1 = unchanged
+			comp_ppc_xori(r0, r0, 1);
+			comp_ppc_rlwimi(f, r0, PPCR_FLAG_V, 31 - PPCR_FLAG_V, 31 - PPCR_FLAG_V, FALSE);
+		}
+		//Result into the low bits of the data register
+		if (s) comp_ppc_rlwimi(d, r, n, s, 31, FALSE); else comp_ppc_mr(d, r, FALSE);
+		break;
+
+	case COMP_SHIFT_LSR:
+	case COMP_SHIFT_ASR:
+		//v = operand zero or sign extended
+		if (kind == COMP_SHIFT_LSR)
+		{
+			if (s) comp_ppc_rlwinm(v, d, 0, s, 31, FALSE); else comp_ppc_mr(v, d, FALSE);
+			comp_ppc_srw(r, v, cnt, FALSE);
+			//C = bit (count - 1); count 0: shift by 63 gives 0
+			comp_ppc_addi(r0, cnt, (uae_u16) -1);
+			comp_ppc_srw(c, v, r0, FALSE);
+			comp_ppc_andi(c, c, 1);
+		} else {
+			if (n == 8) comp_ppc_extsb(v, d, FALSE);
+			else if (n == 16) comp_ppc_extsh(v, d, FALSE);
+			else comp_ppc_mr(v, d, FALSE);
+			comp_ppc_sraw(r, v, cnt, FALSE);
+			comp_ppc_addi(r0, cnt, (uae_u16) -1);
+			comp_ppc_sraw(c, v, r0, FALSE);
+			comp_ppc_andi(c, c, 1);
+			//Count 0: C = 0 (the shift by 63 gave the sign)
+			comp_ppc_cmplwi(PPCR_CR_TMP1, cnt, 0);
+			comp_ppc_bc(PPC_B_CR_TMP1_NE, 0);
+			comp_ppc_li(c, 0);
+			comp_ppc_branch_target(0);
+		}
+		//Result into the low bits, then r = result in the top bits for N and Z
+		if (s)
+		{
+			comp_ppc_rlwimi(d, r, 0, s, 31, FALSE);
+			comp_ppc_rlwinm(r, r, s, 0, 31 - s, FALSE);
+		} else {
+			comp_ppc_mr(d, r, FALSE);
+		}
+		break;
+
+	case COMP_SHIFT_ROL:
+	case COMP_SHIFT_ROR:
+		//v = operand repeated over the whole register, so a 32 bit
+		//rotation by (count modulo 32) rotates every copy by (count modulo size)
+		if (s)
+		{
+			comp_ppc_rlwinm(v, d, 0, s, 31, FALSE);
+			if (n == 8) comp_ppc_rlwimi(v, v, 8, 16, 23, FALSE);
+			comp_ppc_rlwimi(v, v, 16, 0, 15, FALSE);
+		} else {
+			comp_ppc_mr(v, d, FALSE);
+		}
+		if (kind == COMP_SHIFT_ROL)
+		{
+			comp_ppc_rlwnm(r, v, cnt, 0, 31, FALSE);
+			//C = lowest bit of the result
+			comp_ppc_rlwinm(c, r, 0, 31, 31, FALSE);
+		} else {
+			comp_ppc_neg(r0, cnt, FALSE);
+			comp_ppc_rlwnm(r, v, r0, 0, 31, FALSE);
+			//C = highest bit of the result
+			comp_ppc_rlwinm(c, r, (33 - n) & 31, 31, 31, FALSE);
+		}
+		//Count 0: C = 0
+		comp_ppc_cmplwi(PPCR_CR_TMP1, cnt, 0);
+		comp_ppc_bc(PPC_B_CR_TMP1_NE, 0);
+		comp_ppc_li(c, 0);
+		comp_ppc_branch_target(0);
+		if (s)
+		{
+			comp_ppc_rlwimi(d, r, 0, s, 31, FALSE);
+			comp_ppc_rlwinm(r, r, s, 0, 31 - s, FALSE);
+		} else {
+			comp_ppc_mr(d, r, FALSE);
+		}
+		break;
+
+	case COMP_SHIFT_ROXL:
+	case COMP_SHIFT_ROXR:
+		//v = operand in the top bits, c = X; one bit per loop step
+		if (s) comp_ppc_rlwinm(v, d, s, 0, 31 - s, FALSE); else comp_ppc_mr(v, d, FALSE);
+		comp_ppc_rlwinm(c, f, 32 - PPCR_FLAG_X, 31, 31, FALSE);
+		comp_ppc_cmplwi(PPCR_CR_TMP1, cnt, 0);
+		comp_ppc_bc(PPC_B_CR_TMP1_EQ, 0);
+		comp_ppc_mtctr(cnt);
+		comp_ppc_branch_target(1);
+		if (kind == COMP_SHIFT_ROXL)
+		{
+			comp_ppc_rlwinm(r, v, 1, 31, 31, FALSE);		//bit shifted out
+			comp_ppc_rlwinm(v, v, 1, 0, 30, FALSE);
+			comp_ppc_rlwimi(v, c, s, 31 - s, 31 - s, FALSE);	//X in at the bottom
+		} else {
+			comp_ppc_rlwinm(r, v, (32 - s) & 31, 31, 31, FALSE);	//bit shifted out
+			comp_ppc_rlwinm(v, v, 31, 1, 31 - s, FALSE);
+			comp_ppc_rlwimi(v, c, 31, 0, 0, FALSE);			//X in at the top
+		}
+		comp_ppc_mr(c, r, FALSE);
+		comp_ppc_bc(0x0200, 1);		//bdnz
+		comp_ppc_branch_target(0);
+		//C = X = last bit shifted out (count 0: C = X, X unchanged)
+		comp_ppc_rlwimi(f, c, PPCR_FLAG_X, 31 - PPCR_FLAG_X, 31 - PPCR_FLAG_X, FALSE);
+		if (s) comp_ppc_rlwimi(d, v, n, s, 31, FALSE); else comp_ppc_mr(d, v, FALSE);
+		comp_ppc_mr(r, v, FALSE);
+		break;
+	}
+
+	//N, Z from the result in the top bits, C
+	comp_ppc_rlwimi(f, r, 0, 0, 0, FALSE);
+	comp_ppc_cntlzw(r0, r, FALSE);
+	comp_ppc_rlwimi(f, r0, PPCR_FLAG_Z - 5, 31 - PPCR_FLAG_Z, 31 - PPCR_FLAG_Z, FALSE);
+	comp_ppc_rlwimi(f, c, PPCR_FLAG_C, 31 - PPCR_FLAG_C, 31 - PPCR_FLAG_C, FALSE);
+
+	//X = C for the shifts if the count was not 0
+	if (kind == COMP_SHIFT_ASL || kind == COMP_SHIFT_ASR || kind == COMP_SHIFT_LSL || kind == COMP_SHIFT_LSR)
+	{
+		comp_ppc_cmplwi(PPCR_CR_TMP1, cnt, 0);
+		comp_ppc_bc(PPC_B_CR_TMP1_EQ, 2);
+		comp_ppc_rlwimi(f, c, PPCR_FLAG_X, 31 - PPCR_FLAG_X, 31 - PPCR_FLAG_X, FALSE);
+		comp_ppc_branch_target(2);
+	}
+}
+
+/**
+ * Macroblocks: v18: conditional write of the fifth byte of a bit field
+ * in memory (see helper_bit_field_mem_save()).
+ * mark: sets bit 31 of non-volatile register #1 if the mask register is not zero.
+ * skip: branches to the skip target if bit 31 of non-volatile register #1 is clear.
+ * Uses r0 and CR0. Branch reference 2 (not used by the memory access in between).
+ */
+void comp_macroblock_push_bitfield_mark_low_byte(uae_u64 regsin, uae_u64 regsout, comp_ppc_reg mask_reg)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bitfield_mark_low_byte,
+				regsin, regsout);
+	mb->one_reg_opcode.reg = mask_reg;
+}
+
+void comp_macroblock_impl_bitfield_mark_low_byte(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_neg(PPCR_SPECTMP_MAPPED, mb->one_reg_opcode.reg, FALSE);
+	comp_ppc_or(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, mb->one_reg_opcode.reg, FALSE);
+	comp_ppc_rlwimi(PPCR_TMP_NONVOL1_MAPPED, PPCR_SPECTMP_MAPPED, 0, 0, 0, FALSE);
+}
+
+void comp_macroblock_push_bitfield_skip_low_byte(uae_u64 regsin)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bitfield_skip_low_byte,
+				regsin, COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+}
+
+void comp_macroblock_impl_bitfield_skip_low_byte(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_andis(PPCR_SPECTMP_MAPPED, PPCR_TMP_NONVOL1_MAPPED, 0x8000);
+	comp_ppc_bc(PPC_B_CR_TMP0_EQ, 2);
+}
+
+void comp_macroblock_push_bitfield_skip_target(void)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bitfield_skip_target,
+				COMP_COMPILER_MACROBLOCK_REG_NONE, COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+}
+
+void comp_macroblock_impl_bitfield_skip_target(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_branch_target(2);
+}
+
+/**
+ * Macroblock: v18: MULU.L/MULS.L as newcpu.c m68k_mull():
+ * 32 bit result: Dl = low 32 bits, N/Z from them, V = result does not fit
+ * into 32 bits; 64 bit result: Dh:Dl, N from bit 63, Z from all 64 bits,
+ * V = 0; C = 0. The flags are written directly into the flag register.
+ * Uses r0.
+ * Parameters:
+ *    high_last - 64 bit, Dh == Dl: TRUE writes the high word last (68020/030)
+ */
+void comp_macroblock_push_mull(uae_u64 regsin, uae_u64 regsout, BOOL is_signed, BOOL is_64, BOOL high_last, comp_ppc_reg src_reg, comp_ppc_reg dl_reg, comp_ppc_reg dh_reg, comp_ppc_reg t0, comp_ppc_reg t1)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_mull,
+				regsin,
+				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGV | COMP_COMPILER_MACROBLOCK_REG_FLAGC);
+	mb->mull.src_reg = src_reg;
+	mb->mull.dl_reg = dl_reg;
+	mb->mull.dh_reg = dh_reg;
+	mb->mull.t0 = t0;
+	mb->mull.t1 = t1;
+	mb->mull.is_signed = is_signed;
+	mb->mull.is_64 = is_64;
+	mb->mull.high_last = high_last;
+}
+
+void comp_macroblock_impl_mull(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg lo = mb->mull.t0;
+	comp_ppc_reg hi = mb->mull.t1;
+	comp_ppc_reg r0 = PPCR_SPECTMP_MAPPED;
+	comp_ppc_reg f = PPCR_FLAGS_MAPPED;
+
+	comp_ppc_mullw(lo, mb->mull.dl_reg, mb->mull.src_reg, FALSE);
+	if (mb->mull.is_signed)
+		comp_ppc_mulhw(hi, mb->mull.dl_reg, mb->mull.src_reg, FALSE);
+	else
+		comp_ppc_mulhwu(hi, mb->mull.dl_reg, mb->mull.src_reg, FALSE);
+
+	//Clear N, Z, V and C (X stays)
+	comp_ppc_liw(r0, ~((1U << PPCR_FLAG_N) | (1U << PPCR_FLAG_Z) | (1U << PPCR_FLAG_V) | (1U << PPCR_FLAG_C)));
+	comp_ppc_and(f, f, r0, FALSE);
+
+	if (mb->mull.is_64)
+	{
+		comp_ppc_rlwimi(f, hi, 0, 0, 0, FALSE);
+		comp_ppc_or(r0, lo, hi, FALSE);
+		comp_ppc_cntlzw(r0, r0, FALSE);
+		comp_ppc_rlwimi(f, r0, PPCR_FLAG_Z - 5, 31 - PPCR_FLAG_Z, 31 - PPCR_FLAG_Z, FALSE);
+		if (mb->mull.high_last)
+		{
+			comp_ppc_mr(mb->mull.dl_reg, lo, FALSE);
+			comp_ppc_mr(mb->mull.dh_reg, hi, FALSE);
+		} else {
+			comp_ppc_mr(mb->mull.dh_reg, hi, FALSE);
+			comp_ppc_mr(mb->mull.dl_reg, lo, FALSE);
+		}
+	} else {
+		comp_ppc_rlwimi(f, lo, 0, 0, 0, FALSE);
+		comp_ppc_cntlzw(r0, lo, FALSE);
+		comp_ppc_rlwimi(f, r0, PPCR_FLAG_Z - 5, 31 - PPCR_FLAG_Z, 31 - PPCR_FLAG_Z, FALSE);
+		//V: high word not the extension of the low word
+		if (mb->mull.is_signed)
+		{
+			comp_ppc_srawi(r0, lo, 31, FALSE);
+			comp_ppc_xor(r0, r0, hi, FALSE);
+		} else {
+			comp_ppc_mr(r0, hi, FALSE);
+		}
+		comp_ppc_cntlzw(r0, r0, FALSE);
+		comp_ppc_rlwinm(r0, r0, 27, 31, 31, FALSE);
+		comp_ppc_xori(r0, r0, 1);
+		comp_ppc_rlwimi(f, r0, PPCR_FLAG_V, 31 - PPCR_FLAG_V, 31 - PPCR_FLAG_V, FALSE);
+		comp_ppc_mr(mb->mull.dl_reg, lo, FALSE);
+	}
+}
+
+/**
+ * Macroblock: v18: ABCD/SBCD/NBCD on the low bytes of two registers,
+ * the same calculation as the interpreter (gencpu.c): result into the low
+ * byte of dest_reg, C = X = decimal carry/borrow, Z cleared if the result
+ * is not zero (unchanged otherwise), N = bit 7, V as the interpreter
+ * (NBCD: V unchanged). The flags are written directly into the flag
+ * register. Uses r0, CR0 and CR1.
+ * Parameters:
+ *    kind - COMP_BCD_* (NBCD: src_reg is not used, dest_reg is the operand)
+ *    t0-t4 - temporary registers, trashed
+ */
+void comp_macroblock_push_bcd(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg src_reg, comp_ppc_reg dest_reg, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3, comp_ppc_reg t4)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bcd,
+				regsin | COMP_COMPILER_MACROBLOCK_REG_FLAGX | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | (kind == COMP_BCD_NBCD ? COMP_COMPILER_MACROBLOCK_REG_FLAGV : 0),
+				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGV | COMP_COMPILER_MACROBLOCK_REG_FLAGC | COMP_COMPILER_MACROBLOCK_REG_FLAGX
+				| COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGN | COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ);
+	mb->bcd.src_reg = src_reg;
+	mb->bcd.dest_reg = dest_reg;
+	mb->bcd.t[0] = t0;
+	mb->bcd.t[1] = t1;
+	mb->bcd.t[2] = t2;
+	mb->bcd.t[3] = t3;
+	mb->bcd.t[4] = t4;
+	mb->bcd.kind = kind;
+}
+
+#define PPC_B_CR_TMP1_LE	0x0085	//branch if CR1 GT is clear
+
+void comp_macroblock_impl_bcd(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg s = mb->bcd.src_reg;
+	comp_ppc_reg d = mb->bcd.dest_reg;
+	comp_ppc_reg lo = mb->bcd.t[0];		//low nibble sum, later C
+	comp_ppc_reg tmp = mb->bcd.t[1];	//tmp_newv, later V
+	comp_ppc_reg nv = mb->bcd.t[2];		//newv
+	comp_ppc_reg x = mb->bcd.t[3];		//X
+	comp_ppc_reg aux = mb->bcd.t[4];
+	comp_ppc_reg r0 = PPCR_SPECTMP_MAPPED;
+	comp_ppc_reg f = PPCR_FLAGS_MAPPED;
+	int kind = mb->bcd.kind;
+
+	comp_ppc_rlwinm(x, f, 32 - PPCR_FLAG_X, 31, 31, FALSE);
+
+	switch (kind)
+	{
+	case COMP_BCD_ABCD:
+		//lo = (s & 0xf) + (d & 0xf) + X, tmp = (s & 0xf0) + (d & 0xf0) + lo
+		comp_ppc_rlwinm(lo, s, 0, 28, 31, FALSE);
+		comp_ppc_rlwinm(r0, d, 0, 28, 31, FALSE);
+		comp_ppc_add(lo, lo, r0, FALSE);
+		comp_ppc_add(lo, lo, x, FALSE);
+		comp_ppc_rlwinm(tmp, s, 0, 24, 27, FALSE);
+		comp_ppc_rlwinm(r0, d, 0, 24, 27, FALSE);
+		comp_ppc_add(tmp, tmp, r0, FALSE);
+		comp_ppc_add(tmp, tmp, lo, FALSE);
+		comp_ppc_mr(nv, tmp, FALSE);
+		//if (lo > 9) newv += 6
+		comp_ppc_cmplwi(PPCR_CR_TMP1, lo, 9);
+		comp_ppc_bc(PPC_B_CR_TMP1_LE, 0);
+		comp_ppc_addi(nv, nv, 6);
+		comp_ppc_branch_target(0);
+		//c = (newv & 0x3f0) > 0x90; if (c) newv += 0x60
+		comp_ppc_rlwinm(r0, nv, 0, 22, 27, FALSE);
+		comp_ppc_li(lo, 0);
+		comp_ppc_cmplwi(PPCR_CR_TMP1, r0, 0x90);
+		comp_ppc_bc(PPC_B_CR_TMP1_LE, 1);
+		comp_ppc_addi(nv, nv, 0x60);
+		comp_ppc_li(lo, 1);
+		comp_ppc_branch_target(1);
+		//V = (tmp & 0x80) == 0 && (newv & 0x80) != 0
+		comp_ppc_andc(tmp, nv, tmp, FALSE);
+		comp_ppc_rlwinm(tmp, tmp, 25, 31, 31, FALSE);
+		break;
+
+	case COMP_BCD_SBCD:
+		//lo = (d & 0xf) - (s & 0xf) - X, tmp = (d & 0xf0) - (s & 0xf0) + lo
+		comp_ppc_rlwinm(lo, d, 0, 28, 31, FALSE);
+		comp_ppc_rlwinm(r0, s, 0, 28, 31, FALSE);
+		comp_ppc_subf(lo, r0, lo, FALSE);
+		comp_ppc_subf(lo, x, lo, FALSE);
+		comp_ppc_rlwinm(tmp, d, 0, 24, 27, FALSE);
+		comp_ppc_rlwinm(r0, s, 0, 24, 27, FALSE);
+		comp_ppc_subf(tmp, r0, tmp, FALSE);
+		comp_ppc_add(tmp, tmp, lo, FALSE);
+		comp_ppc_mr(nv, tmp, FALSE);
+		//bcd = (lo & 0xf0) ? 6 : 0; newv -= bcd (lo becomes bcd)
+		comp_ppc_andi(r0, lo, 0xf0);
+		comp_ppc_li(lo, 0);
+		comp_ppc_bc(PPC_B_CR_TMP0_EQ, 0);
+		comp_ppc_li(lo, 6);
+		comp_ppc_addi(nv, nv, (uae_u16) -6);
+		comp_ppc_branch_target(0);
+		//r0 = (d & 0xff) - (s & 0xff) - X; if (r0 & 0x100) newv -= 0x60
+		comp_ppc_rlwinm(aux, s, 0, 24, 31, FALSE);
+		comp_ppc_rlwinm(r0, d, 0, 24, 31, FALSE);
+		comp_ppc_subf(r0, aux, r0, FALSE);
+		comp_ppc_subf(r0, x, r0, FALSE);
+		comp_ppc_andi(aux, r0, 0x100);
+		comp_ppc_bc(PPC_B_CR_TMP0_EQ, 1);
+		comp_ppc_addi(nv, nv, (uae_u16) -0x60);
+		comp_ppc_branch_target(1);
+		//c = ((d & 0xff) - (s & 0xff) - bcd - X) & 0x300
+		comp_ppc_subf(r0, lo, r0, FALSE);
+		comp_ppc_andi(r0, r0, 0x300);
+		comp_ppc_li(lo, 0);
+		comp_ppc_bc(PPC_B_CR_TMP0_EQ, 2);
+		comp_ppc_li(lo, 1);
+		comp_ppc_branch_target(2);
+		//V = (tmp & 0x80) != 0 && (newv & 0x80) == 0
+		comp_ppc_andc(tmp, tmp, nv, FALSE);
+		comp_ppc_rlwinm(tmp, tmp, 25, 31, 31, FALSE);
+		break;
+
+	case COMP_BCD_NBCD:
+		//lo = -(d & 0xf) - X, hi = -(d & 0xf0)
+		comp_ppc_rlwinm(lo, d, 0, 28, 31, FALSE);
+		comp_ppc_add(lo, lo, x, FALSE);
+		comp_ppc_neg(lo, lo, FALSE);
+		comp_ppc_rlwinm(tmp, d, 0, 24, 27, FALSE);
+		comp_ppc_neg(tmp, tmp, FALSE);
+		//lo > 9 (as unsigned 16 bit) is lo != 0 here: lo -= 6
+		comp_ppc_cmplwi(PPCR_CR_TMP1, lo, 0);
+		comp_ppc_bc(PPC_B_CR_TMP1_EQ, 0);
+		comp_ppc_addi(lo, lo, (uae_u16) -6);
+		comp_ppc_branch_target(0);
+		//newv = hi + lo; c = (newv & 0x1f0) > 0x90; if (c) newv -= 0x60
+		comp_ppc_add(nv, tmp, lo, FALSE);
+		comp_ppc_rlwinm(r0, nv, 0, 23, 27, FALSE);
+		comp_ppc_li(lo, 0);
+		comp_ppc_cmplwi(PPCR_CR_TMP1, r0, 0x90);
+		comp_ppc_bc(PPC_B_CR_TMP1_LE, 1);
+		comp_ppc_addi(nv, nv, (uae_u16) -0x60);
+		comp_ppc_li(lo, 1);
+		comp_ppc_branch_target(1);
+		break;
+	}
+
+	//Clear N, C (and V except NBCD)
+	comp_ppc_liw(r0, ~((1U << PPCR_FLAG_N) | (1U << PPCR_FLAG_C) | (kind == COMP_BCD_NBCD ? 0 : (1U << PPCR_FLAG_V))));
+	comp_ppc_and(f, f, r0, FALSE);
+	//N = bit 7 of the result
+	comp_ppc_rlwimi(f, nv, 24, 0, 0, FALSE);
+	//Z: cleared if the result is not zero
+	comp_ppc_andi(r0, nv, 0xff);
+	comp_ppc_bc(PPC_B_CR_TMP0_EQ, 0);
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_Z, 30 - PPCR_FLAG_Z, FALSE);
+	comp_ppc_branch_target(0);
+	if (kind != COMP_BCD_NBCD)
+		comp_ppc_rlwimi(f, tmp, PPCR_FLAG_V, 31 - PPCR_FLAG_V, 31 - PPCR_FLAG_V, FALSE);
+	comp_ppc_rlwimi(f, lo, PPCR_FLAG_C, 31 - PPCR_FLAG_C, 31 - PPCR_FLAG_C, FALSE);
+	comp_ppc_rlwimi(f, lo, PPCR_FLAG_X, 31 - PPCR_FLAG_X, 31 - PPCR_FLAG_X, FALSE);
+	//Result into the low byte
+	comp_ppc_rlwimi(d, nv, 0, 24, 31, FALSE);
+}
+
+/**
+ * Macroblock: v18: BFTST/BFEXTU/BFEXTS/BFFFO/BFCHG/BFCLR/BFSET/BFINS on a
+ * data register as the interpreter does it: offset modulo 32, width 1-32,
+ * the field wraps around from bit 0 to bit 31. N/Z from the field (BFINS:
+ * from the inserted value), V = C = 0, written directly into the flag
+ * register. Uses r0, CR1.
+ * Parameters:
+ *    d - the data register with the field
+ *    r - BFINS: source register; BFEXTx/BFFFO: destination register
+ *    off, wid - registers with the offset and the width (as given)
+ *    t0-t3 - temporary registers, trashed
+ */
+void comp_macroblock_push_bitfield_reg(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg d, comp_ppc_reg r, comp_ppc_reg off, comp_ppc_reg wid, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bitfield_reg,
+				regsin,
+				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGV | COMP_COMPILER_MACROBLOCK_REG_FLAGC
+				| COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGN | COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ);
+	mb->bitfield_reg.d = d;
+	mb->bitfield_reg.r = r;
+	mb->bitfield_reg.off = off;
+	mb->bitfield_reg.wid = wid;
+	mb->bitfield_reg.t[0] = t0;
+	mb->bitfield_reg.t[1] = t1;
+	mb->bitfield_reg.t[2] = t2;
+	mb->bitfield_reg.t[3] = t3;
+	mb->bitfield_reg.kind = kind;
+}
+
+void comp_macroblock_impl_bitfield_reg(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg d = mb->bitfield_reg.d;
+	comp_ppc_reg r = mb->bitfield_reg.r;
+	comp_ppc_reg o = mb->bitfield_reg.t[0];
+	comp_ppc_reg w = mb->bitfield_reg.t[1];
+	comp_ppc_reg rot = mb->bitfield_reg.t[2];
+	comp_ppc_reg mask = mb->bitfield_reg.t[3];
+	comp_ppc_reg r0 = PPCR_SPECTMP_MAPPED;
+	comp_ppc_reg f = PPCR_FLAGS_MAPPED;
+	int kind = mb->bitfield_reg.kind;
+
+	//o = offset & 31, w = ((width - 1) & 31) + 1
+	comp_ppc_andi(o, mb->bitfield_reg.off, 31);
+	comp_ppc_addi(w, mb->bitfield_reg.wid, (uae_u16) -1);
+	comp_ppc_andi(w, w, 31);
+	comp_ppc_addi(w, w, 1);
+	//rot = field at the top, mask = top w bits
+	comp_ppc_rlwnm(rot, d, o, 0, 31, FALSE);
+	comp_ppc_subfic(r0, w, 32);
+	comp_ppc_li(mask, (uae_u16) -1);
+	comp_ppc_slw(mask, mask, r0, FALSE);
+
+	if (kind == COMP_BF_INS)
+	{
+		//r0 = inserted value at the top
+		comp_ppc_slw(r0, r, r0, FALSE);
+		comp_ppc_andc(rot, rot, mask, FALSE);
+		comp_ppc_or(rot, rot, r0, FALSE);
+	} else {
+		comp_ppc_and(r0, rot, mask, FALSE);
+	}
+
+	//Flags from r0: N, Z; V = C = 0
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_C, 30 - PPCR_FLAG_C, FALSE);	//clear C
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_V, 30 - PPCR_FLAG_V, FALSE);	//clear V
+	comp_ppc_rlwimi(f, r0, 0, 0, 0, FALSE);
+	comp_ppc_cmplwi(PPCR_CR_TMP1, r0, 0);
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_Z, 30 - PPCR_FLAG_Z, FALSE);	//clear Z
+	comp_ppc_bc(PPC_B_CR_TMP1_NE, 0);
+	comp_ppc_oris(f, f, (1 << PPCR_FLAG_Z) >> 16);
+	comp_ppc_branch_target(0);
+
+	switch (kind)
+	{
+	case COMP_BF_EXTU:
+		comp_ppc_subfic(o, w, 32);
+		comp_ppc_srw(r, r0, o, FALSE);
+		break;
+	case COMP_BF_EXTS:
+		comp_ppc_subfic(o, w, 32);
+		comp_ppc_sraw(r, r0, o, FALSE);
+		break;
+	case COMP_BF_FFO:
+		//result = offset (as given) + leading zeros of the field (max. width)
+		comp_ppc_cntlzw(r0, r0, FALSE);
+		comp_ppc_cmplw(PPCR_CR_TMP1, r0, w);
+		comp_ppc_bc(PPC_B_CR_TMP1_LE, 1);
+		comp_ppc_mr(r0, w, FALSE);
+		comp_ppc_branch_target(1);
+		comp_ppc_add(r, mb->bitfield_reg.off, r0, FALSE);
+		break;
+	case COMP_BF_CHG:
+		comp_ppc_xor(rot, rot, mask, FALSE);
+		break;
+	case COMP_BF_CLR:
+		comp_ppc_andc(rot, rot, mask, FALSE);
+		break;
+	case COMP_BF_SET:
+		comp_ppc_or(rot, rot, mask, FALSE);
+		break;
+	}
+
+	//Rotate back into the data register
+	if (kind == COMP_BF_CHG || kind == COMP_BF_CLR || kind == COMP_BF_SET || kind == COMP_BF_INS)
+	{
+		comp_ppc_neg(r0, o, FALSE);
+		comp_ppc_rlwnm(d, rot, r0, 0, 31, FALSE);
+	}
+}
+
+/**
+ * Macroblock: v18: bit field instructions in memory as the interpreter
+ * does it. hi = long at (address + offset/8), lo = byte behind it; the
+ * field starts at bit (offset & 7) of hi. Flags as
+ * comp_macroblock_push_bitfield_reg(). BFCHG/BFCLR/BFSET/BFINS: hi gets
+ * the new long, lo the new byte in bits 0-7 and in bit 31 whether the byte
+ * has to be written (the field reaches into it).
+ * Parameters:
+ *    r - BFINS: source register; BFEXTx/BFFFO: destination register
+ *    off, wid - registers with the offset (full value) and the width
+ */
+void comp_macroblock_push_bitfield_mem(uae_u64 regsin, uae_u64 regsout, int kind, comp_ppc_reg hi, comp_ppc_reg lo, comp_ppc_reg r, comp_ppc_reg off, comp_ppc_reg wid, comp_ppc_reg t0, comp_ppc_reg t1, comp_ppc_reg t2, comp_ppc_reg t3)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_bitfield_mem,
+				regsin,
+				regsout | COMP_COMPILER_MACROBLOCK_REG_FLAGN | COMP_COMPILER_MACROBLOCK_REG_FLAGZ | COMP_COMPILER_MACROBLOCK_REG_FLAGV | COMP_COMPILER_MACROBLOCK_REG_FLAGC
+				| COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGN | COMP_COMPILER_MACROBLOCK_INTERNAL_FLAGZ);
+	mb->bitfield_reg.d = hi;
+	mb->bitfield_reg.lo = lo;
+	mb->bitfield_reg.r = r;
+	mb->bitfield_reg.off = off;
+	mb->bitfield_reg.wid = wid;
+	mb->bitfield_reg.t[0] = t0;
+	mb->bitfield_reg.t[1] = t1;
+	mb->bitfield_reg.t[2] = t2;
+	mb->bitfield_reg.t[3] = t3;
+	mb->bitfield_reg.kind = kind;
+}
+
+void comp_macroblock_impl_bitfield_mem(union comp_compiler_mb_union* mb)
+{
+	comp_ppc_reg hi = mb->bitfield_reg.d;
+	comp_ppc_reg lo = mb->bitfield_reg.lo;
+	comp_ppc_reg r = mb->bitfield_reg.r;
+	comp_ppc_reg bo = mb->bitfield_reg.t[0];
+	comp_ppc_reg w = mb->bitfield_reg.t[1];
+	comp_ppc_reg fld = mb->bitfield_reg.t[2];
+	comp_ppc_reg mask = mb->bitfield_reg.t[3];
+	comp_ppc_reg r0 = PPCR_SPECTMP_MAPPED;
+	comp_ppc_reg f = PPCR_FLAGS_MAPPED;
+	int kind = mb->bitfield_reg.kind;
+
+	//bo = offset & 7, w = ((width - 1) & 31) + 1
+	comp_ppc_andi(bo, mb->bitfield_reg.off, 7);
+	comp_ppc_addi(w, mb->bitfield_reg.wid, (uae_u16) -1);
+	comp_ppc_andi(w, w, 31);
+	comp_ppc_addi(w, w, 1);
+	//fld = 32 bits starting at the field: (hi << bo) | (lo >> (8 - bo))
+	comp_ppc_andi(lo, lo, 0xff);
+	comp_ppc_slw(fld, hi, bo, FALSE);
+	comp_ppc_subfic(r0, bo, 8);
+	comp_ppc_srw(r0, lo, r0, FALSE);
+	comp_ppc_or(fld, fld, r0, FALSE);
+	//mask = top w bits
+	comp_ppc_subfic(r0, w, 32);
+	comp_ppc_li(mask, (uae_u16) -1);
+	comp_ppc_slw(mask, mask, r0, FALSE);
+
+	if (kind == COMP_BF_INS)
+	{
+		comp_ppc_slw(r0, r, r0, FALSE);
+		comp_ppc_andc(fld, fld, mask, FALSE);
+		comp_ppc_or(fld, fld, r0, FALSE);
+	} else {
+		comp_ppc_and(r0, fld, mask, FALSE);
+	}
+
+	//Flags from r0: N, Z; V = C = 0
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_C, 30 - PPCR_FLAG_C, FALSE);
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_V, 30 - PPCR_FLAG_V, FALSE);
+	comp_ppc_rlwimi(f, r0, 0, 0, 0, FALSE);
+	comp_ppc_cmplwi(PPCR_CR_TMP1, r0, 0);
+	comp_ppc_rlwinm(f, f, 0, 32 - PPCR_FLAG_Z, 30 - PPCR_FLAG_Z, FALSE);
+	comp_ppc_bc(PPC_B_CR_TMP1_NE, 0);
+	comp_ppc_oris(f, f, (1 << PPCR_FLAG_Z) >> 16);
+	comp_ppc_branch_target(0);
+
+	switch (kind)
+	{
+	case COMP_BF_EXTU:
+		comp_ppc_subfic(bo, w, 32);
+		comp_ppc_srw(r, r0, bo, FALSE);
+		return;
+	case COMP_BF_EXTS:
+		comp_ppc_subfic(bo, w, 32);
+		comp_ppc_sraw(r, r0, bo, FALSE);
+		return;
+	case COMP_BF_FFO:
+		comp_ppc_cntlzw(r0, r0, FALSE);
+		comp_ppc_cmplw(PPCR_CR_TMP1, r0, w);
+		comp_ppc_bc(PPC_B_CR_TMP1_LE, 1);
+		comp_ppc_mr(r0, w, FALSE);
+		comp_ppc_branch_target(1);
+		comp_ppc_add(r, mb->bitfield_reg.off, r0, FALSE);
+		return;
+	case COMP_BF_TST:
+		return;
+	case COMP_BF_CHG:
+		comp_ppc_xor(fld, fld, mask, FALSE);
+		break;
+	case COMP_BF_CLR:
+		comp_ppc_andc(fld, fld, mask, FALSE);
+		break;
+	case COMP_BF_SET:
+		comp_ppc_or(fld, fld, mask, FALSE);
+		break;
+	}
+
+	//hi = (hi & ~(mask >> bo)) | ((fld >> bo) & (mask >> bo))
+	comp_ppc_srw(r0, mask, bo, FALSE);
+	comp_ppc_srw(w, fld, bo, FALSE);
+	comp_ppc_and(w, w, r0, FALSE);
+	comp_ppc_andc(hi, hi, r0, FALSE);
+	comp_ppc_or(hi, hi, w, FALSE);
+	//lo mask = (mask << (8 - bo)) & 0xff, lo = (lo & ~lomask) | ((fld << (8 - bo)) & lomask)
+	comp_ppc_subfic(bo, bo, 8);
+	comp_ppc_slw(r0, mask, bo, FALSE);
+	comp_ppc_andi(r0, r0, 0xff);
+	comp_ppc_slw(w, fld, bo, FALSE);
+	comp_ppc_and(w, w, r0, FALSE);
+	comp_ppc_andc(lo, lo, r0, FALSE);
+	comp_ppc_or(lo, lo, w, FALSE);
+	//bit 31 of lo: the byte has to be written
+	comp_ppc_neg(w, r0, FALSE);
+	comp_ppc_or(w, w, r0, FALSE);
+	comp_ppc_rlwimi(lo, w, 0, 0, 0, FALSE);
+}
+
+/** ------------------------------------------------------------------------------
+ * v18 (TODO 7.3): FPU instructions
+ *
+ * The FPU registers stay in regs.fp[] (doubles, as in the interpreter).
+ * A translated instruction loads the source operand into f1, works with f0,
+ * f1, f2 (volatile, nothing lives in them between the macroblocks of
+ * different instructions) and writes the result to regs.fp[] and
+ * regs.fp_result (the condition codes of the interpreter are derived from
+ * it). Memory operands go through regs.jit_fpu_tmp, integer conversions
+ * through regs.jit_fpu_conv. Rarely used operations and the conversion
+ * to integer call the interpreter functions fpp_jit_arith() and
+ * fpp_jit_toint(), so every result is the same as in the interpreter.
+ * Only translated when the host has a classic FPU (not the e500 of the
+ * A1222), see comp_fpu_compilable().
+ */
+#ifdef FPUEMU
+
+#define COMP_FPU_OFF_FP(n)	(COMP_GET_OFFSET_IN_REGS(fp[0]) + (n) * 8)
+#define COMP_FPU_OFF_RESULT	COMP_GET_OFFSET_IN_REGS(fp_result)
+#define COMP_FPU_OFF_FPSR	COMP_GET_OFFSET_IN_REGS(fpsr)
+#define COMP_FPU_OFF_TMP	COMP_GET_OFFSET_IN_REGS(jit_fpu_tmp)
+#define COMP_FPU_OFF_CONV	COMP_GET_OFFSET_IN_REGS(jit_fpu_conv)
+#define COMP_FPU_OFF_MAGIC	COMP_GET_OFFSET_IN_REGS(jit_fpu_magic)
+#define COMP_FPU_OFF_ZERO	COMP_GET_OFFSET_IN_REGS(jit_fpu_zero)
+
+/* Floating point load/store: frt, offset(r14) */
+STATIC_INLINE void comp_ppc_fpmem(uae_u32 op, int fr, uae_u16 offset)
+{
+	comp_ppc_emit_word(op | (fr << 21) | (PPCR_REGS_BASE << 16) | offset);
+}
+#define COMP_PPC_LFD	0xC8000000
+#define COMP_PPC_LFS	0xC0000000
+#define COMP_PPC_STFD	0xD8000000
+#define COMP_PPC_STFS	0xD0000000
+
+/* A-form / X-form floating point instruction: frt, fra, frb (frc for fmul) */
+STATIC_INLINE void comp_ppc_fpop(uae_u32 op, int t, int a, int b)
+{
+	comp_ppc_emit_word(op | (t << 21) | (a << 16) | (b << 11));
+}
+#define COMP_PPC_FADD	0xFC00002A
+#define COMP_PPC_FSUB	0xFC000028
+#define COMP_PPC_FDIV	0xFC000024
+#define COMP_PPC_FMR	0xFC000090
+#define COMP_PPC_FABS	0xFC000210
+#define COMP_PPC_FNEG	0xFC000050
+#define COMP_PPC_FRSP	0xFC000018
+#define COMP_PPC_FCMPU	0xFC000000	/* crf << 2 in t */
+STATIC_INLINE void comp_ppc_fmul(int t, int a, int c)
+{
+	comp_ppc_emit_word(0xFC000032 | (t << 21) | (a << 16) | (c << 6));
+}
+/* CR logical operation: crbt = crba op crbb */
+STATIC_INLINE void comp_ppc_crop(uae_u32 xo, int bt, int ba, int bb)
+{
+	comp_ppc_emit_word(0x4C000000 | (bt << 21) | (ba << 16) | (bb << 11) | xo);
+}
+#define COMP_PPC_CROR	0x382
+#define COMP_PPC_CRNOR	0x042
+#define COMP_PPC_CREQV	0x242
+#define COMP_PPC_CRXOR	0x182
+
+/* f1 = (double) r0 (signed 32 bit), exact */
+STATIC_INLINE void helper_fpu_int_to_double(void)
+{
+	comp_ppc_xoris(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, 0x8000);
+	comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_CONV + 4, PPCR_REGS_BASE_MAPPED);
+	comp_ppc_lis(PPCR_SPECTMP_MAPPED, 0x4330);
+	comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_CONV, PPCR_REGS_BASE_MAPPED);
+	comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_CONV);
+	comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_MAGIC);
+	comp_ppc_fpop(COMP_PPC_FSUB, 1, 1, 0);
+}
+
+/* r0 = r0 or gpr sign extended from size */
+STATIC_INLINE void helper_fpu_extend(comp_ppc_reg src, int size)
+{
+	switch (size)
+	{
+	case 1: comp_ppc_extsb(PPCR_SPECTMP_MAPPED, src, FALSE); break;
+	case 2: comp_ppc_extsh(PPCR_SPECTMP_MAPPED, src, FALSE); break;
+	default: if (src.r != PPCR_SPECTMP) comp_ppc_mr(PPCR_SPECTMP_MAPPED, src, FALSE); break;
+	}
+}
+
+/* Operations translated directly (the others call fpp_jit_arith()) */
+BOOL comp_fpu_inline_op(uae_u16 extra)
+{
+	switch (extra & 0x7f)
+	{
+	case 0x00: case 0x40: case 0x44:	/* FMOVE */
+	case 0x22: case 0x62: case 0x66:	/* FADD */
+	case 0x28: case 0x68: case 0x6c:	/* FSUB */
+	case 0x23: case 0x63: case 0x67:	/* FMUL */
+	case 0x20: case 0x60: case 0x64:	/* FDIV */
+	case 0x24: case 0x27:				/* FSGLDIV, FSGLMUL */
+	case 0x18: case 0x58: case 0x5c:	/* FABS */
+	case 0x1a: case 0x5a: case 0x5e:	/* FNEG */
+	case 0x38: case 0x3a:				/* FCMP, FTST */
+		return TRUE;
+	}
+	return FALSE;
+}
+
+/**
+ * Macroblock: v18 (TODO 7.3): one step of a translated FPU instruction,
+ * see the COMP_FPU_* constants. Never removed by the optimizer (works on
+ * regs.fp[] and the work area).
+ */
+void comp_macroblock_push_fpu(uae_u64 regsin, uae_u64 regsout, int kind, int fpreg, uae_u32 extra, int size, comp_ppc_reg gpr, uae_u32 hi, uae_u32 lo)
+{
+	comp_mb_init(mb,
+				comp_macroblock_impl_fpu,
+				regsin,
+				regsout | COMP_COMPILER_MACROBLOCK_REG_NO_OPTIM);
+	mb->fpu.kind = kind;
+	mb->fpu.fpreg = fpreg;
+	mb->fpu.extra = extra;
+	mb->fpu.size = size;
+	mb->fpu.gpr = gpr;
+	mb->fpu.hi = hi;
+	mb->fpu.lo = lo;
+}
+
+void comp_macroblock_impl_fpu(union comp_compiler_mb_union* mb)
+{
+	int n = mb->fpu.fpreg;
+	uae_u32 extra = mb->fpu.extra;
+
+	switch (mb->fpu.kind)
+	{
+	case COMP_FPU_SRC_FPREG:
+		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_FP(n));
+		break;
+
+	case COMP_FPU_SRC_INT_GPR:
+		helper_fpu_extend(mb->fpu.gpr, mb->fpu.size);
+		helper_fpu_int_to_double();
+		break;
+
+	case COMP_FPU_SRC_INT_TMP:
+		comp_ppc_lwz(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_TMP, PPCR_REGS_BASE_MAPPED);
+		helper_fpu_extend(PPCR_SPECTMP_MAPPED, mb->fpu.size);
+		helper_fpu_int_to_double();
+		break;
+
+	case COMP_FPU_SRC_SINGLE_GPR:
+		comp_ppc_stw(mb->fpu.gpr, COMP_FPU_OFF_TMP, PPCR_REGS_BASE_MAPPED);
+		comp_ppc_fpmem(COMP_PPC_LFS, 1, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_SRC_SINGLE_TMP:
+		comp_ppc_fpmem(COMP_PPC_LFS, 1, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_SRC_DOUBLE_TMP:
+		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_SRC_CONST:
+		comp_ppc_lis(PPCR_SPECTMP_MAPPED, (uae_u16) (mb->fpu.hi >> 16));
+		comp_ppc_ori(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (uae_u16) mb->fpu.hi);
+		comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_TMP, PPCR_REGS_BASE_MAPPED);
+		comp_ppc_lis(PPCR_SPECTMP_MAPPED, (uae_u16) (mb->fpu.lo >> 16));
+		comp_ppc_ori(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, (uae_u16) mb->fpu.lo);
+		comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_TMP + 4, PPCR_REGS_BASE_MAPPED);
+		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_ARITH:
+	{
+		int dst = (extra >> 7) & 7;
+		uae_u32 op = extra & 0x7f;
+
+		switch (op)
+		{
+		case 0x38:	//FCMP: fp_result = (dst == src) ? 0.0 : dst - src, fpsr = 0
+			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
+			comp_ppc_fpop(COMP_PPC_FCMPU, 1 << 2, 0, 1);
+			comp_ppc_fpop(COMP_PPC_FSUB, 2, 0, 1);
+			comp_ppc_emit_word(0x40860008);	//bne cr1,+8
+			comp_ppc_fpmem(COMP_PPC_LFD, 2, COMP_FPU_OFF_ZERO);
+			comp_ppc_fpmem(COMP_PPC_STFD, 2, COMP_FPU_OFF_RESULT);
+			comp_ppc_li(PPCR_SPECTMP_MAPPED, 0);
+			comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+			return;
+		case 0x3a:	//FTST: fp_result = src, fpsr = 0
+			comp_ppc_fpmem(COMP_PPC_STFD, 1, COMP_FPU_OFF_RESULT);
+			comp_ppc_li(PPCR_SPECTMP_MAPPED, 0);
+			comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+			return;
+		case 0x00: case 0x40: case 0x44:
+			comp_ppc_fpop(COMP_PPC_FMR, 0, 0, 1);
+			break;
+		case 0x18: case 0x58: case 0x5c:
+			comp_ppc_fpop(COMP_PPC_FABS, 0, 0, 1);
+			break;
+		case 0x1a: case 0x5a: case 0x5e:
+			comp_ppc_fpop(COMP_PPC_FNEG, 0, 0, 1);
+			break;
+		case 0x22: case 0x62: case 0x66:
+			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
+			comp_ppc_fpop(COMP_PPC_FADD, 0, 0, 1);
+			break;
+		case 0x28: case 0x68: case 0x6c:
+			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
+			comp_ppc_fpop(COMP_PPC_FSUB, 0, 0, 1);
+			break;
+		case 0x23: case 0x63: case 0x67: case 0x27:
+			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
+			comp_ppc_fmul(0, 0, 1);
+			break;
+		case 0x20: case 0x60: case 0x64: case 0x24:
+			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
+			comp_ppc_fpop(COMP_PPC_FDIV, 0, 0, 1);
+			break;
+		default:
+			write_log("JIT: Compiling error: FPU operation %02x is not translated\n", (unsigned) op);
+			comp_compile_error();
+			return;
+		}
+		//Single precision rounding of FSxxx as fround() in the interpreter
+		if ((extra & 0x44) == 0x40)
+			comp_ppc_fpop(COMP_PPC_FRSP, 0, 0, 0);
+		comp_ppc_fpmem(COMP_PPC_STFD, 0, COMP_FPU_OFF_FP(dst));
+		comp_ppc_fpmem(COMP_PPC_STFD, 0, COMP_FPU_OFF_RESULT);
+		break;
+	}
+
+	case COMP_FPU_ARITH_CALL:
+		//fpp_jit_arith(extra, f1): the temporary registers were flushed
+		comp_ppc_liw(PPCR_PARAM1_MAPPED, extra);
+		comp_ppc_call(PPCR_SPECTMP_MAPPED, (uae_uintptr) fpp_jit_arith);
+		break;
+
+	case COMP_FPU_DST_INT_CALL:
+		//work area = fpp_jit_toint(FPn): the temporary registers were flushed
+		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_FP(n));
+		comp_ppc_call(PPCR_SPECTMP_MAPPED, (uae_uintptr) fpp_jit_toint);
+		comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_FPU_OFF_TMP, PPCR_REGS_BASE_MAPPED);
+		break;
+
+	case COMP_FPU_DST_SINGLE:
+		comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(n));
+		comp_ppc_fpop(COMP_PPC_FRSP, 0, 0, 0);
+		comp_ppc_fpmem(COMP_PPC_STFS, 0, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_DST_DOUBLE:
+		comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(n));
+		comp_ppc_fpmem(COMP_PPC_STFD, 0, COMP_FPU_OFF_TMP);
+		break;
+
+	case COMP_FPU_COND:
+	{
+		//CR1 = fp_result compared with 0.0 (lt = N, eq = Z, un = NaN);
+		//CR0.EQ = condition false (as the integer conditions for Bcc)
+		static const struct { uae_u32 xo; int a, b; } t[16] = {
+			{ COMP_PPC_CREQV, 2, 2 },	/* F: always false */
+			{ COMP_PPC_CRNOR, 6, 6 },	/* EQ */
+			{ COMP_PPC_CRNOR, 5, 5 },	/* OGT */
+			{ COMP_PPC_CRNOR, 5, 6 },	/* OGE */
+			{ COMP_PPC_CRNOR, 4, 4 },	/* OLT */
+			{ COMP_PPC_CRNOR, 4, 6 },	/* OLE */
+			{ COMP_PPC_CRNOR, 4, 5 },	/* OGL */
+			{ COMP_PPC_CROR, 7, 7 },	/* OR: !NaN */
+			{ COMP_PPC_CRNOR, 7, 7 },	/* UN */
+			{ COMP_PPC_CRNOR, 7, 6 },	/* UEQ */
+			{ COMP_PPC_CRNOR, 7, 5 },	/* UGT */
+			{ COMP_PPC_CROR, 4, 4 },	/* UGE: !N */
+			{ COMP_PPC_CRNOR, 7, 4 },	/* ULT */
+			{ COMP_PPC_CROR, 5, 5 },	/* ULE: !GT */
+			{ COMP_PPC_CROR, 6, 6 },	/* NE */
+			{ COMP_PPC_CRXOR, 2, 2 },	/* T: always true */
+		};
+		int c = extra & 15;
+		comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_RESULT);
+		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_ZERO);
+		comp_ppc_fpop(COMP_PPC_FCMPU, 1 << 2, 0, 1);
+		comp_ppc_crop(t[c].xo, 2, t[c].a, t[c].b);
+		break;
+	}
+
+	default:
+		write_log("JIT: Compiling error: unknown FPU macroblock %d\n", mb->fpu.kind);
+		comp_compile_error();
+	}
+}
+#else
+void comp_macroblock_push_fpu(uae_u64 regsin, uae_u64 regsout, int kind, int fpreg, uae_u32 extra, int size, comp_ppc_reg gpr, uae_u32 hi, uae_u32 lo)
+{
+	comp_compile_error();
+}
+BOOL comp_fpu_inline_op(uae_u16 extra)
+{
+	return FALSE;
+}
+#endif

@@ -105,6 +105,17 @@ struct
 	int w,h
 } save_window = {FALSE,  0,0,  0,0,  0,0} ;
 
+/*
+ * v18: window size per kind of picture (as WinUAE). The chipset picture
+ * keeps the window size of the configuration (or the size the user dragged
+ * it to); an RTG picture gets a window of the RTG resolution (1:1), at most
+ * as large as the screen - before, the RTG picture was scaled into the
+ * chipset window (1024x768 into 720x568: small and distorted).
+ */
+static int aga_win_w, aga_win_h;	/* inner size of the chipset window, 0 = from save_window */
+#define WIN_MIN_INNER_W 160
+#define WIN_MIN_INNER_H 120
+
 #ifdef PICASSO96
 
 int dx_pal_count;
@@ -226,6 +237,8 @@ struct TagItem tags_public[] = {
 
 static void graphics_subshutdown (void);
 static void p96_sprite_free (void);
+static void p96_status_free (void);
+static int magic_mouse_active (void);
 
 static void open_window(void);
 static void close_window(void);
@@ -271,6 +284,7 @@ extern struct GraphicsIFace *IGraphics;
 extern struct LayersIFace *ILayers;
 extern struct IntuitionIFace *IIntuition;
 extern struct CyberGfxIFace *ICyberGfx;
+extern int comp_keep_aspect;	/* comp.c, v18 */
 
 bool empty_msg_queue(struct MsgPort *port);
 
@@ -1668,6 +1682,71 @@ static int setup_customscreen (void)
 
 /****************************************************************************/
 
+/* inner size of the window for the current picture (v18) */
+static int win_inner_w (void)
+{
+	if (screen_is_picasso && picasso_vidinfo.width > 0)
+		return picasso_vidinfo.width;
+	if (aga_win_w > 0)
+		return aga_win_w;
+	return save_window.w - save_window.bw;
+}
+
+static int win_inner_h (void)
+{
+	if (screen_is_picasso && picasso_vidinfo.height > 0)
+		return picasso_vidinfo.height;
+	if (aga_win_h > 0)
+		return aga_win_h;
+	return save_window.h - save_window.bh;
+}
+
+/* remember the size of the chipset window (before it shows RTG or closes) */
+static void win_remember_aga_size (void)
+{
+	if (W && usepub && !is_fullscreen_state && !screen_is_picasso)
+	{
+		aga_win_w = W -> Width - W -> BorderLeft - W -> BorderRight;
+		aga_win_h = W -> Height - W -> BorderTop - W -> BorderBottom;
+	}
+}
+
+/*
+ * v18: bring the window on the Workbench to the size of the current
+ * picture: RTG resolution, or the chipset window size. Limited to the
+ * screen (then the picture is scaled with its aspect ratio, comp.c) and
+ * moved so that it stays on the screen.
+ */
+static void win_fit_picture (void)
+{
+	struct Screen *scr;
+	int bw, bh, w, h, l, t, maxw, maxh;
+
+	if (!W || !usepub || is_fullscreen_state)
+		return;
+	scr = W -> WScreen;
+	bw = W -> BorderLeft + W -> BorderRight;
+	bh = W -> BorderTop + W -> BorderBottom;
+	w = win_inner_w () + bw;
+	h = win_inner_h () + bh;
+	maxw = scr -> Width;
+	maxh = scr -> Height - (scr -> BarHeight + 1);
+	if (w > maxw) w = maxw;
+	if (h > maxh) h = maxh;
+	if (w == W -> Width && h == W -> Height)
+		return;
+	l = W -> LeftEdge;
+	t = W -> TopEdge;
+	if (l + w > scr -> Width) l = scr -> Width - w;
+	if (t + h > scr -> Height) t = scr -> Height - h;
+	if (l < 0) l = 0;
+	if (t < scr -> BarHeight + 1 && scr -> Height - h >= scr -> BarHeight + 1) t = scr -> BarHeight + 1;
+	if (t < 0) t = 0;
+	write_log ("AMIGFX: window %dx%d for the %s picture\n", w - bw, h - bh, screen_is_picasso ? "RTG" : "chipset");
+	ChangeWindowBox (W, l, t, w, h);
+	p96_force_present = true;
+}
+
 static void open_window_as_last(void)
 {
 
@@ -1677,8 +1756,8 @@ static void open_window_as_last(void)
 
 			WA_Left, save_window.x,
 			WA_Top, save_window.y,
-			WA_InnerWidth, save_window.w - save_window.bw,
-			WA_InnerHeight, save_window.h - save_window.bh,
+			WA_InnerWidth, win_inner_w (),
+			WA_InnerHeight, win_inner_h (),
 
 			WA_PubScreen,    (ULONG)S,
 
@@ -1694,8 +1773,8 @@ static void open_window_as_last(void)
 					| WFLG_SIZEGADGET | WFLG_SIZEBBOTTOM
 					| WFLG_SMART_REFRESH,
 
-			WA_MinWidth, save_window.w,
-			WA_MinHeight, save_window.h,
+			WA_MinWidth, WIN_MIN_INNER_W,
+			WA_MinHeight, WIN_MIN_INNER_H,
 
 			WA_MaxWidth, ~0,
 			WA_MaxHeight, ~0,
@@ -1716,10 +1795,13 @@ static void open_window_as_last(void)
 
 			save_window.w += save_window.bw;
 			save_window.h += save_window.bh;
-
-			Result = SetWindowAttr( W, WA_MinWidth, save_window.w, sizeof(LONG) );
-			Result = SetWindowAttr( W, WA_MinHeight, save_window.h , sizeof(LONG) );
 		}
+		/* v18: small minimum size - the picture is scaled with its aspect
+		 * ratio (comp.c); it was the full window size before, so an RTG
+		 * window could not be smaller than the chipset window */
+		Result = SetWindowAttr( W, WA_MinWidth, WIN_MIN_INNER_W + W -> BorderLeft + W -> BorderRight, sizeof(LONG) );
+		Result = SetWindowAttr( W, WA_MinHeight, WIN_MIN_INNER_H + W -> BorderTop + W -> BorderBottom, sizeof(LONG) );
+		(void) Result;
 	}
 }
 
@@ -2096,13 +2178,20 @@ void init_comp( struct Window *W )
 			draw_aga_RP = W -> RPort;
 			draw_p96_RP = W -> RPort;
 			update_fullscreen_rect( currprefs.gfx_correct_aspect );
+			/* drawn into the window directly: drawing.c keeps the
+			 * aspect ratio (line map) as before */
+			drawing_set_aspect_by_driver (0);
 		}
 		else
 		{
 			draw_aga_RP = &comp_aga_RP;
 			draw_p96_RP = &comp_p96_RP;
 			init_aga_comp(output_depth);
+			/* v18 (TODO 4.3): composited - the aspect ratio is kept in
+			 * comp.c (same factor for X and Y), no omitted lines */
+			drawing_set_aspect_by_driver (1);
 		}
+		comp_keep_aspect = currprefs.gfx_correct_aspect;
 
 		write_log("screen_is_picasso: %s\n", screen_is_picasso ? "Yes" : "No");
 
@@ -2535,7 +2624,16 @@ static APTR setup_classic_buffer (struct vidbuf_description *gfxinfo, const stru
 	// 4 bytes alignment.
 	bytes_per_row = bytes_per_row & 3 ? (bytes_per_row & ~3) + 4 : bytes_per_row;
 
-	buffer = AllocVecTagList ( bytes_per_row  * gfxinfo->height , tags_any);
+	/* Cleared: rows the Amiga never draws (PAL with line doubling gives 570
+	 * lines, a 576 high window leaves 6) were uninitialised memory, and
+	 * refresh_aga() flushes the whole buffer at start and on every window
+	 * refresh - a light blue (window) or orange (fullscreen) bar at the
+	 * bottom. */
+	buffer = AllocVecTags ( bytes_per_row  * gfxinfo->height,
+				AVT_Type,           MEMF_SHARED,
+				AVT_Alignment,      16,
+				AVT_ClearWithValue, 0,
+				TAG_DONE);
 	if (buffer)
 	{
 		gfxinfo->bufmem = buffer;
@@ -2767,6 +2865,18 @@ void initialize_gfxvidinfo_width_height()
 	save_window.bh = 0;
 	save_window.bw = 0;
 
+	/* v18: a new window size in the configuration replaces the remembered
+	 * size of the chipset window */
+	{
+		static int pref_w = -1, pref_h = -1;
+		if (pref_w != currprefs.gfx_width_win || pref_h != currprefs.gfx_height_win)
+		{
+			pref_w = currprefs.gfx_width_win;
+			pref_h = currprefs.gfx_height_win;
+			aga_win_w = aga_win_h = 0;
+		}
+	}
+
 	if (save_window.saved == FALSE)
 	{
 		struct Screen *screen = LockPubScreen( "Workbench" );
@@ -2860,6 +2970,8 @@ void close_window()
 	 	dispose_icon( W, &padlockicon );
 		dispose_icon( W, &fullscreenicon );
 
+		win_remember_aga_size ();	/* v18 */
+
 		if (is_fullscreen_state == FALSE)
 		{
 			save_window.x = W -> LeftEdge;
@@ -2904,6 +3016,7 @@ static void graphics_subshutdown (void)
 	sf(FreeBitMap,comp_p96_RP.BitMap);
 	sf(FreeBitMap,comp_aga_RP.BitMap);
 	p96_sprite_free ();
+	p96_status_free ();
 
 	draw_p96_RP = NULL;
 }
@@ -2912,6 +3025,7 @@ void graphics_leave (void)
 {
 	sf(free,oldpixbuf);
 	sf(free,classic_buffer);
+
 
 	closepseudodevices ();
 
@@ -3053,7 +3167,10 @@ void refresh_aga()
 		uae_u8 *ptr = oldpixbuf;
 		int i, len = gfxvidinfo.width;
 		len *= gfxvidinfo.pixbytes;
-		for (i=0; i < currprefs.gfx_height_win; ++i)
+		/* v18 (TODO 4.6): the buffer height, not the window height -
+		 * in fullscreen the buffer is gfx_height_fs high; a smaller
+		 * buffer was read and written past its end */
+		for (i=0; i < gfxvidinfo.height; ++i)
 		{
 			ptr[00000] ^= 255;
 			ptr[len-1] ^= 255;
@@ -3061,7 +3178,7 @@ void refresh_aga()
 		}
 	}
 	BeginRefresh (W);
-	flush_block (0, currprefs.gfx_height_win - 1);
+	flush_block (0, gfxvidinfo.height - 1);
 	EndRefresh (W, TRUE);
 }
 
@@ -3204,8 +3321,12 @@ void handle_events(void)
 				break;
 
 			case IDCMP_MOUSEMOVE:
-				setmousestate (0, 0, dmx, 0);
-				setmousestate (0, 1, dmy, 0);
+				/* v18: with Magic Mouse the Amiga pointer follows the
+				 * host pointer (magic_mouse_sync()), no relative moves */
+				if (!magic_mouse_active ()) {
+					setmousestate (0, 0, dmx, 0);
+					setmousestate (0, 1, dmy, 0);
+				}
 
 				if (usepub)
 				{
@@ -3695,6 +3816,7 @@ static void set_window_for_picasso (void)
 
 	graphics_subshutdown();
 	graphics_subinit();
+	win_fit_picture ();	/* v18: RTG mode changed - window follows */
 }
 
 void update_p96_format()
@@ -3750,6 +3872,8 @@ void gfx_set_picasso_state (int on)
 		return;
 	}
 
+	win_remember_aga_size ();	/* v18: chipset window size, before RTG */
+
 	screen_was_picasso = screen_is_picasso;
 	screen_is_picasso = on;
 
@@ -3778,6 +3902,7 @@ void gfx_set_picasso_state (int on)
 	{
 		graphics_subshutdown ();
 		graphics_subinit ();
+		win_fit_picture ();	/* v18: window in RTG resolution / back to chipset size */
 	}
 
 	if (on) DX_SetPalette (0, 256);
@@ -3821,7 +3946,10 @@ static void set_title (void)
 
 #else
 
-	const char *title = inhibit_frame ? WINDOW_TITLE " (Display off)" : WINDOW_TITLE;
+	/* v18: only the display switch (hotkey / Scroll Lock). inhibit_frame is a
+	 * bit mask; IHF_PICASSO is set while an RTG screen is shown, so the
+	 * window said "Display off" over every running RTG picture. */
+	const char *title = (inhibit_frame & (1 << IHF_SCROLLLOCK)) ? WINDOW_TITLE " (Display off)" : WINDOW_TITLE;
 	SetWindowTitles (W, title, (char*)-1);
 
 #endif
@@ -4306,6 +4434,222 @@ static void p96_sprite_draw (void)
 		BackFill_Sprite (p96_sprite_bm, spr->width, spr->height, spr->x, spr->y);
 }
 
+/*
+ * v18: status line (LEDs, FPS, JIT) on RTG screens. drawing.c draws it only
+ * into the chipset picture; on a Picasso96 screen it is drawn as 32 bit ARGB
+ * (draw_status_line_argb()) and composited over the bottom lines of the RTG
+ * picture in the window, like the mouse pointer. The picture of the
+ * emulated graphics card (and a screenshot of it) stays untouched.
+ */
+static struct BitMap *p96_status_bm;
+static uae_u32       *p96_status_buf;
+static uae_u32       *p96_status_prev;
+static int            p96_status_w;
+static int            p96_status_shown;
+
+static void p96_status_free (void)
+{
+	if (p96_status_bm)
+	{
+		WaitBlit ();
+		FreeBitMap (p96_status_bm);
+		p96_status_bm = NULL;
+	}
+	if (p96_status_buf)
+	{
+		free (p96_status_buf);
+		p96_status_buf = NULL;
+	}
+	if (p96_status_prev)
+	{
+		free (p96_status_prev);
+		p96_status_prev = NULL;
+	}
+	p96_status_w = 0;
+	p96_status_shown = 0;
+}
+
+/* 1: new status line built, 0: unchanged or off, -1: switched off (redraw the picture) */
+static int p96_status_update (void)
+{
+	int w = picasso_vidinfo.width;
+	int h = draw_status_line_height ();
+	size_t size;
+	APTR lock;
+	uae_u8 *base = NULL;
+	ULONG bpr = 0;
+	int y;
+
+	if (!currprefs.leds_on_screen || !gfx_rtg_sprite_supported () || w <= 0 || picasso_vidinfo.height <= h)
+	{
+		if (p96_status_shown)
+		{
+			p96_status_shown = 0;
+			return -1;
+		}
+		return 0;
+	}
+
+	size = (size_t) w * h * sizeof (uae_u32);
+	if (w != p96_status_w)
+	{
+		p96_status_free ();
+		p96_status_bm = AllocBitMapTags (w, h, 32,
+				BMATags_PixelFormat, PIXF_A8R8G8B8,
+				BMATags_Displayable, TRUE,
+				TAG_DONE);
+		if (!p96_status_bm)
+			p96_status_bm = AllocBitMapTags (w, h, 32,
+					BMATags_PixelFormat, PIXF_A8R8G8B8,
+					BMATags_Displayable, FALSE,
+					TAG_DONE);
+		p96_status_buf = malloc (size);
+		p96_status_prev = malloc (size);
+		if (!p96_status_bm || !p96_status_buf || !p96_status_prev)
+		{
+			static int warned;
+			if (!warned++)
+				write_log ("AMIGFX: no memory for the status line on RTG screens\n");
+			p96_status_free ();
+			return 0;
+		}
+		p96_status_w = w;
+	}
+
+	draw_status_line_argb (p96_status_buf, w, w);
+	if (p96_status_shown && memcmp (p96_status_buf, p96_status_prev, size) == 0)
+		return 0;
+
+	lock = IGraphics -> LockBitMapTags (p96_status_bm,
+			LBM_BaseAddress, (APTR *) &base,
+			LBM_BytesPerRow, &bpr,
+			TAG_END);
+	if (!lock || !base)
+	{
+		if (lock)
+			IGraphics -> UnlockBitMap (lock);
+		return 0;
+	}
+	/* PIXF_A8R8G8B8 is 0xAARRGGBB in big endian order */
+	for (y = 0; y < h; y++)
+		memcpy (base + y * bpr, p96_status_buf + y * w, w * sizeof (uae_u32));
+	IGraphics -> UnlockBitMap (lock);
+
+	memcpy (p96_status_prev, p96_status_buf, size);
+	p96_status_shown = 1;
+	return 1;
+}
+
+static void p96_status_draw (void)
+{
+	int h = draw_status_line_height ();
+
+	if (p96_status_shown && p96_status_bm)
+		BackFill_Sprite (p96_status_bm, p96_status_w, h, 0, picasso_vidinfo.height - h);
+}
+
+/*
+ * v18 (TODO 8.17): Magic Mouse. In a window on the Workbench showing an RTG
+ * screen with the hardware mouse pointer, the Amiga pointer follows the
+ * host pointer: no mouse grab, the host pointer can leave the window at any
+ * time. The position of the Amiga pointer is known exactly (SetSpritePosition
+ * of the uaegfx card, hot spot from the BoardInfo); E-UAE sends the relative
+ * movement that brings it to the host pointer, the next one when the
+ * previous one has arrived. The ratio between sent and seen movement (mouse
+ * speed, acceleration of the Input preferences) is measured as it goes. Chipset screens and fullscreen keep
+ * the normal relative mouse.
+ */
+extern int comp_window_to_source (int wx, int wy, int *sx, int *sy);
+extern void BackFill_Area (int sx, int sy, int w, int h);
+
+static int magic_mouse_active (void)
+{
+	struct picasso96_sprite *spr = &picasso96_sprite;
+
+	return changed_prefs.amiga_magic_mouse && W && usepub && !is_fullscreen_state
+		&& screen_is_picasso && spr->enabled && spr->visible && spr->valid;
+}
+
+/* one axis: send a move only when the previous one has arrived (the Amiga
+ * shows a move one to three frames later - sending every frame overshot) */
+struct magic_axis {
+	int inflight;		/* sent, not seen yet (mouse counts) */
+	int base;		/* pointer position when it was sent */
+	int wait;		/* frames since */
+	float gain;		/* pixels per mouse count, measured */
+};
+
+static int magic_axis_step (struct magic_axis *a, int pos, int target)
+{
+	int d, s;
+
+	if (a->inflight) {
+		int moved = pos - a->base;
+		float expect = a->inflight * a->gain;
+
+		a->wait++;
+		if (moved && (moved > 0) == (a->inflight > 0)
+		    && (abs (moved) * 2 >= (int) (expect < 0 ? -expect : expect) || a->wait >= 4)) {
+			float g = (float) moved / (float) a->inflight;
+			if (g < 0.25f) g = 0.25f;
+			if (g > 4.0f) g = 4.0f;
+			a->gain = a->gain * 0.5f + g * 0.5f;
+			a->inflight = 0;
+		} else if (a->wait >= 4) {
+			a->inflight = 0;	/* lost (pointer at the screen edge, ...) */
+		}
+		if (a->inflight)
+			return 0;
+	}
+	d = target - pos;
+	s = (int) (d / a->gain);
+	if (!s && d)
+		s = d > 0 ? 1 : -1;
+	if (s > 120) s = 120;
+	if (s < -120) s = -120;
+	if (s) {
+		a->inflight = s;
+		a->base = pos;
+		a->wait = 0;
+	}
+	return s;
+}
+
+static void magic_mouse_sync (void)
+{
+	static struct magic_axis ax, ay;
+	static int active;
+	struct picasso96_sprite *spr = &picasso96_sprite;
+	int tx, ty, px, py, sx, sy;
+
+	if (!magic_mouse_active ()
+	    || get_pointer_state (W, W->MouseX, W->MouseY) != INSIDE_WINDOW
+	    || !comp_window_to_source (W->MouseX, W->MouseY, &tx, &ty)) {
+		active = 0;
+		return;
+	}
+	if (!active) {
+		active = 1;
+		memset (&ax, 0, sizeof ax);
+		memset (&ay, 0, sizeof ay);
+		ax.gain = ay.gain = 1.0f;
+	}
+
+	/* pointer position (hot spot) of the Amiga, in RTG pixels */
+	px = spr->x - spr->xoffset;
+	py = spr->y - spr->yoffset;
+
+	/* setmousestate() applies the mouse speed of the configuration -
+	 * the measured gain takes care of it (and of the acceleration of the
+	 * Input preferences) */
+	sx = magic_axis_step (&ax, px, tx);
+	sy = magic_axis_step (&ay, py, ty);
+	if (sx)
+		setmousestate (0, 0, sx, 0);
+	if (sy)
+		setmousestate (0, 1, sy, 0);
+}
+
 void amiga_gfx_present (void)
 {
 
@@ -4359,14 +4703,22 @@ void amiga_gfx_present (void)
 				 * the time on a Workbench) no longer costs a composite of
 				 * the whole window every frame. */
 				struct picasso96_sprite *spr = &picasso96_sprite;
-				static int last_x, last_y, last_vis = -1, idle_frames;
+				static int last_x, last_y, last_w, last_h, last_vis = -1, idle_frames;
 				static uae_u32 last_serial;
 				int vis = spr->enabled && spr->visible && spr->valid;
 				int need = p96_gfx_updated || p96_force_present;
+				int moved = 0;
+				int status = p96_status_update ();
 
-				if (vis != last_vis || (vis && (spr->x != last_x || spr->y != last_y
-								  || spr->serial != last_serial)))
+				magic_mouse_sync ();	/* v18 */
+
+				if (status < 0)
+					need = 1;	/* status line switched off */
+
+				if (vis != last_vis || (vis && spr->serial != last_serial))
 					need = 1;
+				else if (vis && (spr->x != last_x || spr->y != last_y))
+					moved = 1;	/* v18: only the pointer moved */
 				if (++idle_frames >= 50)
 					need = 1;
 
@@ -4380,12 +4732,36 @@ void amiga_gfx_present (void)
 				{
 					BackFill_Func(NULL, NULL);
 					p96_sprite_draw ();
+					p96_status_draw ();
 					p96_force_present = false;
 					idle_frames = 0;
 					last_vis = vis;
 					last_x = spr->x;
 					last_y = spr->y;
+					last_w = spr->width;
+					last_h = spr->height;
 					last_serial = spr->serial;
+				}
+				else if (moved)
+				{
+					/* v18: only the mouse pointer moved - composite the
+					 * picture under its old and new position instead of
+					 * the whole window (it was a full composite for every
+					 * pointer move), then the pointer and the status line */
+					BackFill_Area (last_x, last_y, last_w, last_h);
+					BackFill_Area (spr->x, spr->y, spr->width, spr->height);
+					p96_sprite_draw ();
+					p96_status_draw ();
+					last_x = spr->x;
+					last_y = spr->y;
+					last_w = spr->width;
+					last_h = spr->height;
+				}
+				else if (status > 0)
+				{
+					/* only the status line changed (FPS, LEDs): its LED
+					 * boxes are opaque, so it is enough to draw it again */
+					p96_status_draw ();
 				}
 			}
 		}
@@ -4447,9 +4823,288 @@ void toggle_fullscreen (void)
 	reopen_display ();
 }
 
+/****************************************************************************
+ *
+ * v18: screenshot (Ctrl+Alt+P) as PNG
+ *
+ * The emulated picture (chipset or Picasso96, as shown, without window
+ * borders and scaling) is read in its screen pixel format, converted to
+ * 24 bit RGB and written as PNG with zlib (linked anyway). The first try
+ * went through datatypes.library: png.datatype created with DTST_RAM did
+ * not take the pixels (PDTM_WRITEPIXELARRAY returned 0) and saved a black
+ * picture. Files: E-UAE_0001.png ... in the folder of the GUI settings
+ * ("Screenshots:", default PROGDIR:Screenshots).
+ */
+
+#include <zlib.h>
+
+#define SHOT_DIR "PROGDIR:Screenshots"
+
+/* folder from the GUI settings (gui-reaction/gui_settings.c); weak, so a
+ * build with another GUI uses SHOT_DIR */
+extern const char *gui_screenshot_dir (void) __attribute__ ((weak));
+
+/* "dir" + "/" if needed, so a file name can be appended */
+static void shot_dir (char *buf, size_t size)
+{
+	const char *d = gui_screenshot_dir ? gui_screenshot_dir () : NULL;
+	size_t l;
+
+	if (!d || !d[0])
+		d = SHOT_DIR;
+	snprintf (buf, size, "%s", d);
+	l = strlen (buf);
+	if (l > 0 && buf[l - 1] == '/')
+		buf[l - 1] = '\0';	/* CreateDir()/Lock() without the slash */
+}
+
+static int shot_exists (const char *name)
+{
+	BPTR lock = Lock (name, SHARED_LOCK);
+	if (lock)
+	{
+		UnLock (lock);
+		return 1;
+	}
+	return 0;
+}
+
+static void shot_be32 (uae_u8 *p, uae_u32 v)
+{
+	p[0] = v >> 24; p[1] = v >> 16; p[2] = v >> 8; p[3] = v;
+}
+
+static int shot_chunk (FILE *f, const char *type, const uae_u8 *data, uae_u32 len)
+{
+	uae_u8 h[8], c[4];
+	uLong crc = crc32 (0L, Z_NULL, 0);
+
+	shot_be32 (h, len);
+	memcpy (h + 4, type, 4);
+	crc = crc32 (crc, h + 4, 4);
+	if (len)
+		crc = crc32 (crc, data, len);
+	shot_be32 (c, (uae_u32) crc);
+	return fwrite (h, 8, 1, f) == 1
+		&& (!len || fwrite (data, len, 1, f) == 1)
+		&& fwrite (c, 4, 1, f) == 1;
+}
+
+/* argb: w * h pixels 0xAARRGGBB; PNG truecolour 8 bit, filter "Sub" */
+static int shot_write_png (const char *name, const uae_u32 *argb, int w, int h)
+{
+	static const uae_u8 sig[8] = { 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n' };
+	uae_u8 ihdr[13];
+	uLong rawlen = (uLong) (w * 3 + 1) * h, zlen = compressBound (rawlen);
+	uae_u8 *raw = malloc (rawlen), *z = malloc (zlen);
+	FILE *f = NULL;
+	int x, y, ok = 0;
+
+	if (!raw || !z)
+		goto out;
+	for (y = 0; y < h; y++)
+	{
+		uae_u8 *d = raw + (uLong) y * (w * 3 + 1);
+		const uae_u32 *s = argb + (uLong) y * w;
+		uae_u32 prev = 0;
+
+		*d++ = 1;	/* filter Sub: difference to the left pixel, packs better */
+		for (x = 0; x < w; x++)
+		{
+			uae_u32 c = s[x];
+			*d++ = (uae_u8) ((c >> 16) - (prev >> 16));
+			*d++ = (uae_u8) ((c >> 8) - (prev >> 8));
+			*d++ = (uae_u8) (c - prev);
+			prev = c;
+		}
+	}
+	if (compress2 (z, &zlen, raw, rawlen, 6) != Z_OK)
+		goto out;
+
+	shot_be32 (ihdr, w);
+	shot_be32 (ihdr + 4, h);
+	ihdr[8] = 8;	/* bits per sample */
+	ihdr[9] = 2;	/* truecolour RGB */
+	ihdr[10] = ihdr[11] = ihdr[12] = 0;
+
+	f = fopen (name, "wb");
+	if (!f)
+	{
+		write_log ("Screenshot: cannot create %s\n", name);
+		goto out;
+	}
+	ok = fwrite (sig, 8, 1, f) == 1
+		&& shot_chunk (f, "IHDR", ihdr, 13)
+		&& shot_chunk (f, "IDAT", z, (uae_u32) zlen)
+		&& shot_chunk (f, "IEND", NULL, 0);
+	if (fclose (f) != 0)
+		ok = 0;
+	if (!ok)
+		remove (name);
+out:
+	free (raw);
+	free (z);
+	return ok;
+}
+
+/* one pixel of the screen bitmap as 0xFFRRGGBB; 0 bytes per pixel = unknown format */
+static int shot_bytes_per_pixel (ULONG fmt)
+{
+	switch (fmt)
+	{
+		case PIXF_A8R8G8B8: case PIXF_A8B8G8R8: case PIXF_R8G8B8A8: case PIXF_B8G8R8A8: return 4;
+		case PIXF_R8G8B8: case PIXF_B8G8R8: return 3;
+		case PIXF_R5G6B5: case PIXF_R5G6B5PC: case PIXF_B5G6R5PC:
+		case PIXF_R5G5B5: case PIXF_R5G5B5PC: case PIXF_B5G5R5PC: return 2;
+	}
+	return 0;
+}
+
+static uae_u32 shot_pixel (const uae_u8 *p, ULONG fmt)
+{
+	uae_u32 r = 0, g = 0, b = 0, v;
+
+	switch (fmt)
+	{
+		case PIXF_A8R8G8B8: r = p[1]; g = p[2]; b = p[3]; break;
+		case PIXF_A8B8G8R8: r = p[3]; g = p[2]; b = p[1]; break;
+		case PIXF_R8G8B8A8: r = p[0]; g = p[1]; b = p[2]; break;
+		case PIXF_B8G8R8A8: r = p[2]; g = p[1]; b = p[0]; break;
+		case PIXF_R8G8B8:   r = p[0]; g = p[1]; b = p[2]; break;
+		case PIXF_B8G8R8:   r = p[2]; g = p[1]; b = p[0]; break;
+		case PIXF_R5G6B5: case PIXF_R5G6B5PC: case PIXF_B5G6R5PC:
+			v = fmt == PIXF_R5G6B5 ? (p[0] << 8) | p[1] : (p[1] << 8) | p[0];
+			r = (v >> 11) & 31; g = (v >> 5) & 63; b = v & 31;
+			if (fmt == PIXF_B5G6R5PC) { uae_u32 t = r; r = b; b = t; }
+			r = (r << 3) | (r >> 2); g = (g << 2) | (g >> 4); b = (b << 3) | (b >> 2);
+			break;
+		case PIXF_R5G5B5: case PIXF_R5G5B5PC: case PIXF_B5G5R5PC:
+			v = fmt == PIXF_R5G5B5 ? (p[0] << 8) | p[1] : (p[1] << 8) | p[0];
+			r = (v >> 10) & 31; g = (v >> 5) & 31; b = v & 31;
+			if (fmt == PIXF_B5G5R5PC) { uae_u32 t = r; r = b; b = t; }
+			r = (r << 3) | (r >> 2); g = (g << 3) | (g >> 2); b = (b << 3) | (b >> 2);
+			break;
+	}
+	return 0xff000000 | (r << 16) | (g << 8) | b;
+}
+
 void screenshot (int type)
 {
-    write_log ("Screenshot not implemented yet\n");
+	static int next_number = 1;
+	static char last_dir[MAX_DPATH];
+	struct BitMap *src = NULL;
+	int w, h, n, x, y, bpp;
+	ULONG fmt;
+	APTR lock;
+	uae_u8 *base = NULL;
+	uae_u32 *argb;
+	ULONG bpr = 0;
+	char dir[MAX_DPATH], name[MAX_DPATH + 32];
+	const char *sep;
+	int ok = 0;
+
+	if (screen_is_picasso)
+	{
+		src = comp_p96_RP.BitMap;
+		w = picasso_vidinfo.width;
+		h = picasso_vidinfo.height;
+	}
+	else
+	{
+		src = comp_aga_RP.BitMap;
+		w = gfxvidinfo.width;
+		h = gfxvidinfo.height;
+	}
+	if (!W || !src || GetBitMapAttr (src, BMA_DEPTH) <= 8)
+	{
+		write_log ("Screenshot: not possible on a screen with 256 colours or less\n");
+		return;
+	}
+	fmt = GetBitMapAttr (src, BMA_PIXELFORMAT);
+	bpp = shot_bytes_per_pixel (fmt);
+	if (!bpp)
+	{
+		write_log ("Screenshot: pixel format %lu not supported\n", (unsigned long) fmt);
+		return;
+	}
+	if (w > (int) GetBitMapAttr (src, BMA_WIDTH))
+		w = GetBitMapAttr (src, BMA_WIDTH);
+	if (h > (int) GetBitMapAttr (src, BMA_HEIGHT))
+		h = GetBitMapAttr (src, BMA_HEIGHT);
+	if (w <= 0 || h <= 0)
+		return;
+
+	argb = malloc ((size_t) w * h * sizeof (uae_u32));
+	if (!argb)
+	{
+		write_log ("Screenshot: no memory for a %dx%d picture\n", w, h);
+		return;
+	}
+
+	/* v18: read the picture directly in its screen format and convert it
+	 * here. BltBitMap() into a 32 bit bitmap of another format did not
+	 * convert (the file contained uninitialised memory). */
+	WaitBlit ();
+	lock = IGraphics -> LockBitMapTags (src,
+			LBM_BaseAddress, (APTR *) &base,
+			LBM_BytesPerRow, &bpr,
+			TAG_END);
+	if (!lock || !base)
+	{
+		if (lock)
+			IGraphics -> UnlockBitMap (lock);
+		free (argb);
+		write_log ("Screenshot: cannot lock the picture\n");
+		return;
+	}
+	for (y = 0; y < h; y++)
+	{
+		const uae_u8 *s = base + y * bpr;
+		uae_u32 *d = argb + y * w;
+		for (x = 0; x < w; x++, s += bpp)
+			d[x] = shot_pixel (s, fmt);
+	}
+	IGraphics -> UnlockBitMap (lock);
+
+	shot_dir (dir, sizeof dir);
+	if (strcmp (dir, last_dir))
+	{
+		/* other folder: count from 1 again */
+		snprintf (last_dir, sizeof last_dir, "%s", dir);
+		next_number = 1;
+	}
+	sep = dir[0] && dir[strlen (dir) - 1] != ':' ? "/" : "";
+	{
+		BPTR l = Lock (dir, SHARED_LOCK);
+		if (!l)
+			l = CreateDir (dir);
+		if (l)
+			UnLock (l);
+		else
+			write_log ("Screenshot: cannot create the folder %s\n", dir);
+	}
+
+	for (n = next_number; n <= 9999; n++)
+	{
+		snprintf (name, sizeof name, "%s%sE-UAE_%04d.png", dir, sep, n);
+		if (!shot_exists (name))
+			break;
+	}
+	if (n <= 9999)
+	{
+		next_number = n + 1;
+		snprintf (name, sizeof name, "%s%sE-UAE_%04d.png", dir, sep, n);
+		ok = shot_write_png (name, argb, w, h);
+	}
+	else
+		write_log ("Screenshot: no free file name in %s\n", dir);
+	free (argb);
+
+	if (ok)
+		write_log ("Screenshot: %s (%dx%d, PNG, from pixel format %lu)\n", name, w, h,
+				(unsigned long) fmt);
+	else
+		write_log ("Screenshot: saving failed\n");
 }
 
 /****************************************************************************
@@ -4650,6 +5305,7 @@ void gfx_default_options (struct uae_prefs *p)
 	p->amiga_use_dither      = 1;
 	p->amiga_use_grey        = 0;
 	p->amiga_middle_release  = 1;
+	p->amiga_magic_mouse     = 0;
 }
 
 void gfx_save_options (FILE *f, const struct uae_prefs *p)
@@ -4659,6 +5315,7 @@ void gfx_save_options (FILE *f, const struct uae_prefs *p)
 	cfgfile_write (f, GFX_NAME ".use_dither=%s\n",   p->amiga_use_dither ? "true" : "false");
 	cfgfile_write (f, GFX_NAME ".use_grey=%s\n",     p->amiga_use_grey ? "true" : "false");
 	cfgfile_write (f, GFX_NAME ".middle_release=%s\n", p->amiga_middle_release ? "true" : "false");
+	cfgfile_write (f, GFX_NAME ".magic_mouse=%s\n", p->amiga_magic_mouse ? "true" : "false");
 }
 
 int gfx_parse_option (struct uae_prefs *p, const char *option, const char *value)
@@ -4666,6 +5323,7 @@ int gfx_parse_option (struct uae_prefs *p, const char *option, const char *value
 	return (cfgfile_yesno  (option, value, "use_dither",   &p->amiga_use_dither)
 		|| cfgfile_yesno  (option, value, "use_grey",	 &p->amiga_use_grey)
 		|| cfgfile_yesno  (option, value, "middle_release", &p->amiga_middle_release)
+		|| cfgfile_yesno  (option, value, "magic_mouse", &p->amiga_magic_mouse)
 		|| cfgfile_strval (option, value, "screen_type",  &p->amiga_screen_type, screen_type, 0)
 		|| cfgfile_string (option, value, "publicscreen", &p->amiga_publicscreen[0], 256));
 }

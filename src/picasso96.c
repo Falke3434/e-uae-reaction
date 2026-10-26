@@ -2376,6 +2376,11 @@ static uae_u32 load_sprite_image (uaecptr bi)
 
     spr->valid = 0;
     spr->serial++;
+    /* v18: hot spot (signed, normally <= 0) - the image is drawn at
+     * MouseX/MouseY, the pointer position is MouseX - MouseXOffset (Magic
+     * Mouse, gfx-amigaos/ami-win.c) */
+    spr->xoffset = (uae_s8) get_byte (bi + PSSO_BoardInfo_MouseXOffset);
+    spr->yoffset = (uae_s8) get_byte (bi + PSSO_BoardInfo_MouseYOffset);
     if (w <= 0 || h <= 0 || !image || !valid_address (image, datasize))
 	return 1;
     if (w > P96_SPRITE_MAXWIDTH)

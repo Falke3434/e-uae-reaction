@@ -15,6 +15,7 @@
  */
 
 #include "reaction_gui.h"
+#include "arexx.h"
 
 #include <workbench/icon.h>
 #include <proto/icon.h>
@@ -148,6 +149,12 @@ static void update_status (void)
 	int load = cur_idle / 10;
 	if (load < 0)   load = 0;
 	if (load > 100) load = 100;
+#ifdef JIT
+	/* v18: share of the block runs in translated code (TODO 2.4) */
+	if (gui_data.jitpct >= 0)
+	    sprintf (line, "%s | %d.%d fps | CPU %d%% | JIT %d%% | %s", st, cur_fps / 10, cur_fps % 10, load, gui_data.jitpct, leds);
+	else
+#endif
 	sprintf (line, "%s | %d.%d fps | CPU %d%% | %s", st, cur_fps / 10, cur_fps % 10, load, leds);
     } else
 	sprintf (line, "%s", st);
@@ -491,6 +498,8 @@ void gui_init (int argc, char **argv)
     /* v16: Programm-Einstellungen laden (Ordner, Log-Ausgabe) - vor der
      * ersten Ausgabe, damit "Log aus" kein Ausgabefenster oeffnet */
     ra_settings_init ();
+    /* v18: ARexx port "UAE" (RunInUAE), also when E-UAE starts without GUI */
+    rexx_init ();
 }
 
 int gui_open (void)
@@ -513,6 +522,7 @@ int gui_open (void)
 
 void gui_exit (void)
 {
+    rexx_exit ();                /* v18 */
     if (!ra_window_obj && !WindowBase)
 	return;                  /* schon aufgeraeumt */
     dispose_window ();
@@ -537,6 +547,7 @@ void gui_led (int led, int on)
 {
     if (led < 0 || led > 6)
 	return;
+    rexx_led (led, on);          /* v18: ARexx FEEDBACK / QUERY LED_xxx */
     if (on)
 	led_state |= 1u << led;
     else
@@ -588,11 +599,14 @@ void gui_cd_led (int led)
 void gui_filename (int num, const char *name)
 {
     media_dirty = 1;           /* Disk wurde von der Emulation gewechselt */
+    rexx_filename (num, name); /* v18: ARexx FEEDBACK NAME_DFx */
 }
 
 void gui_handle_events (void)
 {
     static unsigned tick;
+
+    rexx_handle_events ();     /* v18: also without GUI window (RunInUAE) */
 
     if (!ra_window_obj)
 	return;
@@ -625,7 +639,7 @@ static void quick_insert (int drive)
     /* v17: snprintf - a long translation overflowed title[48] */
     snprintf (title, sizeof title, ra_tr ("Select image for DF%d"), drive);
 
-    if (ra_request_file_in (RA_DIR_FLOPPY, title, "#?.(adf|adz|dms|ipf|zip|gz|lha|lzh|lzx|dsk)", FALSE, FALSE, path, sizeof path)) {
+    if (ra_request_file_in (RA_DIR_FLOPPY, title, "#?.(adf|adz|dms|fdi|zip|gz|lha|lzh|lzx|dsk)", FALSE, FALSE, path, sizeof path)) {
 	strncpy (last_floppy, path, sizeof last_floppy - 1);
 	strncpy (changed_prefs.df[drive], path, sizeof changed_prefs.df[drive] - 1);
 	changed_prefs.df[drive][sizeof changed_prefs.df[drive] - 1] = '\0';
@@ -645,6 +659,19 @@ static void quick_state (int save)
 			  "#?.uss", save, FALSE, path, sizeof path))
 	return;
 
+    /* v18: without an extension ".uss" is added, as ".cfg" for "Save as..." */
+    if (save && !strchr ((const char *) FilePart (path), '.') && strlen (path) + 4 < sizeof path) {
+	BPTR lock;
+
+	strcat (path, ".uss");
+	lock = Lock (path, SHARED_LOCK);
+	if (lock) {
+	    UnLock (lock);
+	    if (!ra_confirm ("The file '%s' already exists.\nReplace it?", path))
+		return;
+	}
+    }
+
     strncpy (last_state, path, sizeof last_state - 1);
     if (save) {
 	savestate_initsave (path, 1);
@@ -653,6 +680,16 @@ static void quick_state (int save)
 	savestate_initsave (path, 1);
 	savestate_state = STATE_DORESTORE;
 	write_log ("Restoring state from '%s'...\n", path);
+	/* v18: from the stopped state the emulation starts with the
+	 * savestate (as in WinUAE): the first frame runs, then the
+	 * restore resets the machine into the saved state (drawing.c) -
+	 * the same way as "statefile=" in a configuration. */
+	if (emu_state == UAE_STATE_STOPPED) {
+	    ra_read_all ();
+	    uae_start ();
+	    if (ra_settings.iconify_on_start)
+		ra_iconify ();
+	}
     }
 }
 #endif
