@@ -824,6 +824,33 @@ static void dispose_aino (Unit *unit, a_inode **aip, a_inode *aino)
     xfree (aino);
 }
 
+static int flush_cache (Unit *unit, int num)
+{
+    a_inode *aino = unit->rootnode.next;
+    int flushed = 0;
+
+    while (aino != &unit->rootnode && (num <= 0 || flushed < num)) {
+	a_inode *next = aino->next;
+
+	if (next == 0)
+	    break;
+	if (aino->parent != 0 && !aino->parent->locked_children
+	    && !aino->dir && aino->shlock == 0 && !aino->elock) {
+	    a_inode **aip = &aino->parent->child;
+
+	    while (*aip != 0 && *aip != aino)
+		aip = &(*aip)->sibling;
+	    if (*aip == aino) {
+		de_recycle_aino (unit, aino);
+		dispose_aino (unit, aip, aino);
+		flushed++;
+	    }
+	}
+	aino = next;
+    }
+    return flushed;
+}
+
 static void recycle_aino (Unit *unit, a_inode *new_aino)
 {
     aino_test (new_aino);
@@ -834,55 +861,8 @@ static void recycle_aino (Unit *unit, a_inode *new_aino)
 
     TRACE (("Recycling; cache size %d, total_locked %d\n",
 	    unit->aino_cache_size, unit->total_locked_ainos));
-    if (unit->aino_cache_size > 5000 + unit->total_locked_ainos) {
-	/* Reap a few. */
-	int i = 0;
-	while (i < 50) {
-	    a_inode *parent = unit->rootnode.prev->parent;
-	    a_inode **aip;
-	    aip = &parent->child;
-
-	    aino_test (parent);
-	    if (! parent->locked_children) {
-		for (;;) {
-		    a_inode *aino = *aip;
-		    aino_test (aino);
-		    if (aino == 0)
-			break;
-		    /* Not recyclable if next == 0 (i.e., not chained into
-		       recyclable list), or if parent directory is being
-		       ExNext()ed.  */
-		    if (aino->next == 0) {
-			aip = &aino->sibling;
-		    } else {
-			if (aino->shlock > 0 || aino->elock)
-			    write_log ("panic: freeing locked a_inode!\n");
-
-			de_recycle_aino (unit, aino);
-			dispose_aino (unit, aip, aino);
-			i++;
-		    }
-		}
-	    }
-	    /* In the previous loop, we went through all children of one
-	       parent.  Re-arrange the recycled list so that we'll find a
-	       different parent the next time around.  */
-	    do {
-		unit->rootnode.next->prev = unit->rootnode.prev;
-		unit->rootnode.prev->next = unit->rootnode.next;
-		unit->rootnode.next = unit->rootnode.prev;
-		unit->rootnode.prev = unit->rootnode.prev->prev;
-		unit->rootnode.prev->next = unit->rootnode.next->prev = &unit->rootnode;
-	    } while (unit->rootnode.prev->parent == parent);
-	}
-#if 0
-	{
-	    char buffer[40];
-	    sprintf (buffer, "%d ainos reaped.\n", i);
-	    TRACE ((buffer));
-	}
-#endif
-    }
+    if (unit->aino_cache_size > 5000 + unit->total_locked_ainos)
+	flush_cache (unit, 50);
 
     aino_test (new_aino);
     /* Chain it into circular list. */
@@ -2539,6 +2519,7 @@ action_examine_all_end (Unit *unit, dpacket packet)
 static void
 action_inhibit (Unit *unit, dpacket packet)
 {
+    flush_cache (unit, 0);
     unit->inhibited = GET_PCK_ARG1 (packet) != 0;
     PUT_PCK_RES1 (packet, DOS_TRUE);
 }
@@ -3919,7 +3900,7 @@ action_is_filesystem (Unit *unit, dpacket packet)
 static void
 action_flush (Unit *unit, dpacket packet)
 {
-    /* sync(); */ /* pretty drastic, eh */
+    flush_cache (unit, 0);
     PUT_PCK_RES1 (packet, DOS_TRUE);
 }
 
@@ -4068,6 +4049,12 @@ static int handle_packet (Unit *unit, dpacket pck)
 {
     uae_s32 type = GET_PCK_TYPE (pck);
     PUT_PCK_RES2 (pck, 0);
+    if (unit->inhibited && type != ACTION_INHIBIT
+	&& type != ACTION_DISK_INFO) {
+	PUT_PCK_RES1 (pck, DOS_FALSE);
+	PUT_PCK_RES2 (pck, ERROR_NOT_A_DOS_DISK);
+	return 1;
+    }
     switch (type) {
      case ACTION_LOCATE_OBJECT: action_lock (unit, pck); break;
      case ACTION_FREE_LOCK: action_free_lock (unit, pck); break;
@@ -4326,6 +4313,10 @@ static void free_all_ainos (Unit *u, a_inode *parent)
 
 void filesys_flush_cache (void)
 {
+    Unit *unit;
+
+    for (unit = units; unit != 0; unit = unit->next)
+	flush_cache (unit, 0);
 }
 
 void filesys_prepare_reset (void)
