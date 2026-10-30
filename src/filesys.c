@@ -13,7 +13,6 @@
   * (May - August 1989)
   *
   * Known limitations:
-  * Does not support ACTION_INHIBIT (big deal).
   * Does not support several 2.0+ packet types.
   * Does not support removable volumes.
   * May not return the correct error code in some cases.
@@ -515,6 +514,13 @@ struct hardfiledata *get_hardfile_data (int nr)
 #define dp_Arg2 24
 #define dp_Arg3 28
 #define dp_Arg4 32
+#define dp_Arg5 36
+
+#define dp64_Res1 24
+#define dp64_Arg1 32
+#define dp64_Arg2 40
+#define dp64_Arg3 48
+#define dp64_Arg4 52
 
 /* result codes */
 #define DOS_TRUE ((unsigned int)-1L)
@@ -550,8 +556,13 @@ struct hardfiledata *get_hardfile_data (int nr)
 #define ACTION_END		1007
 #define ACTION_SEEK		1008
 #define ACTION_IS_FILESYSTEM	1027
+#ifndef ACTION_READ
 #define ACTION_READ		'R'
+#endif
+#ifndef ACTION_WRITE
 #define ACTION_WRITE		'W'
+#endif
+#define ACTION_SEEK64		26400
 
 /* 2.0+ packet types */
 #define ACTION_INHIBIT		31
@@ -565,12 +576,29 @@ struct hardfiledata *get_hardfile_data (int nr)
 #define ACTION_PARENT_FH	1031
 #define ACTION_EXAMINE_FH	1034
 #define ACTION_EXAMINE_ALL	1033
+#define ACTION_EXAMINE_ALL_END	1035
 #define ACTION_MAKE_LINK	1021
 #define ACTION_READ_LINK	1024
 #define ACTION_FORMAT		1020
 #define ACTION_IS_FILESYSTEM	1027
 #define ACTION_ADD_NOTIFY	4097
 #define ACTION_REMOVE_NOTIFY	4098
+
+/* OS4 64-bit file position packets */
+#define ACTION_CHANGE_FILE_POSITION64	8001
+#define ACTION_GET_FILE_SIZE64		8004
+
+#define EXALL_ED_NAME		1
+#define EXALL_ED_TYPE		2
+#define EXALL_ED_SIZE		3
+#define EXALL_ED_PROTECTION	4
+#define EXALL_ED_DATE		5
+#define EXALL_ED_COMMENT	6
+#define EXALL_ED_OWNER		7
+
+#ifndef ERROR_BUFFER_OVERFLOW
+#define ERROR_BUFFER_OVERFLOW	120
+#endif
 
 #define DISK_TYPE		0x444f5301 /* DOS\1 */
 
@@ -639,6 +667,7 @@ typedef struct _unit {
     struct key *keys;
     uae_u32 key_uniq;
     uae_u32 a_uniq;
+    int inhibited;
 
     a_inode rootnode;
     unsigned long aino_cache_size;
@@ -660,6 +689,28 @@ typedef uae_u8 *dpacket;
 #define GET_PCK_ARG2(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp_Arg2))))
 #define GET_PCK_ARG3(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp_Arg3))))
 #define GET_PCK_ARG4(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp_Arg4))))
+#define GET_PCK_ARG5(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp_Arg5))))
+#define GET_PCK64_ARG1(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp64_Arg1))))
+#define GET_PCK64_ARG2(p) ((uae_s64)(((uae_u64)do_get_mem_long ((uae_u32 *)((p) + dp64_Arg2)) << 32) | do_get_mem_long ((uae_u32 *)((p) + dp64_Arg2 + 4))))
+#define GET_PCK64_ARG3(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp64_Arg3))))
+#define GET_PCK64_ARG4(p) ((uae_s32)(do_get_mem_long ((uae_u32 *)((p) + dp64_Arg4))))
+
+static void put_pck64_res1 (dpacket packet, uae_s64 value)
+{
+    do_put_mem_long ((uae_u32 *)(packet + dp64_Res1), (uae_u32)((uae_u64)value >> 32));
+    do_put_mem_long ((uae_u32 *)(packet + dp64_Res1 + 4), (uae_u32)value);
+}
+
+static uae_s64 get_quad (uaecptr addr)
+{
+    return (uae_s64)(((uae_u64)get_long (addr) << 32) | get_long (addr + 4));
+}
+
+static void put_quad (uaecptr addr, uae_s64 value)
+{
+    put_long (addr, (uae_u32)((uae_u64)value >> 32));
+    put_long (addr + 4, (uae_u32)value);
+}
 
 static char *char1 (uaecptr addr)
 {
@@ -1217,9 +1268,17 @@ static a_inode *lookup_child_aino_for_exnext (Unit *unit, a_inode *base, char *r
     while (c != 0) {
 	int l1 = strlen (c->nname);
 	/* Note: using strcmp here.  */
-	if (l0 <= l1 && strcmp (rel, c->nname + l1 - l0) == 0
-	    && (l0 == l1 || c->nname[l1-l0-1] == FSDB_DIR_SEPARATOR))
-	    break;
+	if (l0 <= l1 && strcmp (rel, c->nname + l1 - l0) == 0) {
+	    int prefix_len = l1 - l0;
+	    if (l0 == l1 || c->nname[prefix_len-1] == FSDB_DIR_SEPARATOR
+#ifdef TARGET_AMIGAOS
+		|| (prefix_len == strlen (base->nname)
+		    && base->nname[prefix_len-1] == ':'
+		    && strncmp (c->nname, base->nname, prefix_len) == 0)
+#endif
+		)
+		break;
+	}
 	c = c->sibling;
     }
     if (c != 0)
@@ -2296,6 +2355,478 @@ static void action_examine_next (Unit *unit, dpacket packet)
   no_more_entries:
     PUT_PCK_RES1 (packet, DOS_FALSE);
     PUT_PCK_RES2 (packet, ERROR_NO_MORE_ENTRIES);
+}
+
+static unsigned int exall_align (unsigned int size)
+{
+    return (size + 3) & ~3;
+}
+
+static int
+action_examine_all (Unit *unit, dpacket packet)
+{
+    uaecptr lock = GET_PCK_ARG1 (packet) << 2;
+    uaecptr buffer = GET_PCK_ARG2 (packet);
+    uaecptr control = GET_PCK_ARG5 (packet);
+    long packet_buffer_size = GET_PCK_ARG3 (packet);
+    uae_u32 buffer_size;
+    uae_u32 type = GET_PCK_ARG4 (packet);
+    a_inode *aino = 0;
+    ExamineKey *ek;
+    uae_u32 uniq, entries = 0, used = 0;
+    uaecptr previous = 0;
+
+    if (packet_buffer_size <= 0) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_BAD_NUMBER);
+	return 1;
+    }
+    buffer_size = packet_buffer_size;
+    if (type < EXALL_ED_NAME || type > EXALL_ED_OWNER) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_BAD_NUMBER);
+	return 1;
+    }
+    if (get_long (control + 8) != 0 || get_long (control + 12) != 0) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_ACTION_NOT_KNOWN);
+	return 0;
+    }
+
+    if (lock != 0)
+	aino = lookup_aino (unit, get_long (lock + 4));
+    if (aino == 0)
+	aino = &unit->rootnode;
+    if (!aino->dir) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_OBJECT_WRONG_TYPE);
+	return 1;
+    }
+
+    uniq = get_long (control + 4);
+    if (uniq == 0) {
+	ek = new_exkey (unit, aino);
+	if (ek == 0) {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_NO_FREE_STORE);
+	    return 1;
+	}
+	if (aino->exnext_count++ == 0)
+	    populate_directory (unit, aino);
+	ek->curr_file = aino->child;
+	put_long (control + 4, ek->uniq);
+    } else {
+	ek = lookup_exkey (unit, uniq);
+	if (ek == 0 || ek->aino != aino) {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_NO_MORE_ENTRIES);
+	    return 1;
+	}
+    }
+
+    put_long (control, 0);
+    while (ek->curr_file != 0) {
+	a_inode *entry = ek->curr_file;
+	struct stat statbuf;
+	uae_u32 fixed_size = 12;
+	unsigned int name_length = (unsigned int)strlen (entry->aname);
+	uae_u32 name_size = exall_align (name_length + 1);
+	uae_u32 comment_size = 0;
+	uae_u32 record_size;
+	uaecptr address;
+	long days = 0, mins = 0, ticks = 0;
+
+	if (type >= EXALL_ED_SIZE)
+	    fixed_size += 4;
+	if (type >= EXALL_ED_PROTECTION)
+	    fixed_size += 4;
+	if (type >= EXALL_ED_DATE)
+	    fixed_size += 12;
+	if (type >= EXALL_ED_COMMENT)
+	    fixed_size += 4;
+	if (type >= EXALL_ED_OWNER)
+	    fixed_size += 4;
+	if (type >= EXALL_ED_COMMENT && entry->comment != 0)
+	    comment_size = exall_align ((unsigned int)strlen (entry->comment) + 1);
+	record_size = fixed_size + name_size + comment_size;
+	if (record_size > buffer_size - used)
+	    break;
+
+	address = buffer + used;
+	memset (&statbuf, 0, sizeof statbuf);
+	if (type >= EXALL_ED_SIZE)
+	    stat (entry->nname, &statbuf);
+	put_long (address + 4, entry->dir ? 2 : -3);
+	put_long (address + 8, address + fixed_size);
+	{
+	    const char *name = entry->aname;
+	    unsigned int i;
+	    for (i = 0; i < name_length; i++)
+		put_byte (address + fixed_size + i, name[i]);
+	    put_byte (address + fixed_size + i, 0);
+	}
+
+	if (type >= EXALL_ED_SIZE) {
+	    put_long (address + 12, (uae_u32)statbuf.st_size);
+	}
+	if (type >= EXALL_ED_PROTECTION)
+	    put_long (address + 16, entry->amigaos_mode);
+	if (type >= EXALL_ED_DATE) {
+	    get_time (statbuf.st_mtime, &days, &mins, &ticks);
+	    put_long (address + 20, days);
+	    put_long (address + 24, mins);
+	    put_long (address + 28, ticks);
+	}
+	if (type >= EXALL_ED_COMMENT) {
+	    if (entry->comment != 0) {
+		uaecptr comment = address + fixed_size + name_size;
+		unsigned int i;
+		put_long (address + 32, comment);
+		for (i = 0; entry->comment[i] != 0; i++)
+		    put_byte (comment + i, entry->comment[i]);
+		put_byte (comment + i, 0);
+	    } else {
+		put_long (address + 32, 0);
+	    }
+	}
+	if (type >= EXALL_ED_OWNER) {
+	    put_byte (address + 36, 0);
+	    put_byte (address + 37, 0);
+	    put_byte (address + 38, 0);
+	    put_byte (address + 39, 0);
+	}
+
+	if (previous != 0)
+	    put_long (previous, address);
+	previous = address;
+	used += record_size;
+	entries++;
+	ek->curr_file = entry->sibling;
+    }
+
+    if (previous != 0)
+	put_long (previous, 0);
+    put_long (control, entries);
+    PUT_PCK_RES1 (packet, DOS_TRUE);
+    if (entries == 0) {
+	if (ek->curr_file == 0) {
+	    free_exkey (unit, ek);
+	    put_long (control + 4, 0);
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_NO_MORE_ENTRIES);
+	} else {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_BUFFER_OVERFLOW);
+	}
+    }
+    return 1;
+}
+
+static void
+action_examine_all_end (Unit *unit, dpacket packet)
+{
+    uaecptr control = GET_PCK_ARG2 (packet);
+    uae_u32 uniq = get_long (control + 4);
+    ExamineKey *ek = lookup_exkey (unit, uniq);
+
+    if (uniq != 0 && ek != 0) {
+	free_exkey (unit, ek);
+	put_long (control + 4, 0);
+    }
+    PUT_PCK_RES1 (packet, DOS_TRUE);
+}
+
+static void
+action_inhibit (Unit *unit, dpacket packet)
+{
+    unit->inhibited = GET_PCK_ARG1 (packet) != 0;
+    PUT_PCK_RES1 (packet, DOS_TRUE);
+}
+
+static int host_make_hard_link (const char *source, const char *destination)
+{
+#ifdef _WIN32
+    (void)source;
+    (void)destination;
+    return -1;
+#else
+    return link (source, destination);
+#endif
+}
+
+static int host_make_soft_link (const char *source, const char *destination)
+{
+#ifdef _WIN32
+    (void)source;
+    (void)destination;
+    return -1;
+#else
+    return symlink (source, destination);
+#endif
+}
+
+static ssize_t host_read_link (const char *path, char *buffer, size_t size)
+{
+#ifdef _WIN32
+    (void)path;
+    (void)buffer;
+    (void)size;
+    return -1;
+#else
+    return readlink (path, buffer, size);
+#endif
+}
+
+static void updatedirtime (a_inode *a1, int now);
+
+static void
+action_make_link (Unit *unit, dpacket packet)
+{
+    uaecptr lock = GET_PCK_ARG1 (packet) << 2;
+    uaecptr name = GET_PCK_ARG2 (packet) << 2;
+    uaecptr destination = GET_PCK_ARG3 (packet) << 2;
+    long linktype = GET_PCK_ARG4 (packet);
+    a_inode *parent, *target = 0, *link_aino;
+    char *target_name = 0;
+    uae_u32 err;
+    int result;
+
+    if (unit->ui.readonly) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_DISK_WRITE_PROTECTED);
+	return;
+    }
+#ifdef _WIN32
+    PUT_PCK_RES1 (packet, DOS_FALSE);
+    PUT_PCK_RES2 (packet, ERROR_NOT_IMPLEMENTED);
+    return;
+#endif
+    if (linktype != 0 && linktype != 1) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_BAD_NUMBER);
+	return;
+    }
+
+    parent = find_aino (unit, lock, bstr (unit, name), &err);
+    if (parent == 0 || err != ERROR_OBJECT_NOT_AROUND) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, err == 0 ? ERROR_OBJECT_EXISTS : err);
+	return;
+    }
+    if (linktype == 0) {
+	target = lookup_aino (unit, get_long (destination + 4));
+	if (target == 0) {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_INVALID_LOCK);
+	    return;
+	}
+    } else {
+	target_name = my_strdup (bstr (unit, destination));
+	if (target_name == 0) {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_NO_FREE_STORE);
+	    return;
+	}
+    }
+
+    link_aino = create_child_aino (unit, parent, bstr_cut (unit, name), 0);
+    if (link_aino == 0) {
+	xfree (target_name);
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_DISK_IS_FULL);
+	return;
+    }
+    result = linktype == 0
+	? host_make_hard_link (target->nname, link_aino->nname)
+	: host_make_soft_link (target_name, link_aino->nname);
+    xfree (target_name);
+    if (result != 0) {
+	err = dos_errno ();
+	delete_aino (unit, link_aino);
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, err);
+	return;
+    }
+
+    fsdb_set_file_attrs (link_aino);
+    notify_check (unit, link_aino);
+    updatedirtime (link_aino, 0);
+    PUT_PCK_RES1 (packet, DOS_TRUE);
+    gui_hd_led (2);
+}
+
+static void
+action_read_link (Unit *unit, dpacket packet)
+{
+    uaecptr lock = GET_PCK_ARG1 (packet) << 2;
+    uaecptr name = GET_PCK_ARG2 (packet) << 2;
+    uaecptr buffer = GET_PCK_ARG3 (packet);
+    long size = GET_PCK_ARG4 (packet);
+    a_inode *aino;
+    uae_u32 err;
+    char *path;
+    int free_path = 0;
+    char *link;
+    ssize_t actual;
+    size_t i;
+
+#ifdef _WIN32
+    PUT_PCK_RES1 (packet, DOS_FALSE);
+    PUT_PCK_RES2 (packet, ERROR_NOT_IMPLEMENTED);
+    return;
+#endif
+    if (size <= 0) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_BAD_NUMBER);
+	return;
+    }
+    aino = find_aino (unit, lock, bstr (unit, name), &err);
+    if (aino == 0 || (err != 0 && err != ERROR_OBJECT_NOT_AROUND)) {
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, err);
+	return;
+    }
+    if (err == 0) {
+	path = aino->nname;
+    } else {
+	path = build_nname (aino->nname, bstr_cut (unit, name));
+	if (path == 0) {
+	    PUT_PCK_RES1 (packet, DOS_FALSE);
+	    PUT_PCK_RES2 (packet, ERROR_NO_FREE_STORE);
+	    return;
+	}
+	free_path = 1;
+    }
+
+    link = (char *)xmalloc (size);
+    if (link == 0) {
+	if (free_path)
+	    xfree (path);
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_NO_FREE_STORE);
+	return;
+    }
+    actual = host_read_link (path, link, size);
+    if (actual < 0) {
+	err = dos_errno ();
+	xfree (link);
+	if (free_path)
+	    xfree (path);
+	PUT_PCK_RES1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, err);
+	return;
+    }
+    for (i = 0; i < (size_t)actual; i++)
+	put_byte (buffer + i, link[i]);
+    if (actual < size)
+	put_byte (buffer + actual, 0);
+    xfree (link);
+    if (free_path)
+	xfree (path);
+    PUT_PCK_RES1 (packet, actual);
+}
+
+static off_t
+seek_key64 (Key *key, uae_s64 position, long mode, off_t *old_position)
+{
+    int whence = mode > 0 ? SEEK_END : mode < 0 ? SEEK_SET : SEEK_CUR;
+    off_t native_position = (off_t)position;
+    off_t result, file_size;
+
+    if ((uae_s64)native_position != position)
+	return (off_t)-1;
+    *old_position = lseek (key->fd, 0, SEEK_CUR);
+    if (*old_position == (off_t)-1)
+	return (off_t)-1;
+    result = lseek (key->fd, native_position, whence);
+    if (result == (off_t)-1)
+	return result;
+    file_size = lseek (key->fd, 0, SEEK_END);
+    if (file_size == (off_t)-1 || result < 0 || result > file_size) {
+	lseek (key->fd, *old_position, SEEK_SET);
+	return (off_t)-1;
+    }
+    if (lseek (key->fd, result, SEEK_SET) == (off_t)-1) {
+	lseek (key->fd, *old_position, SEEK_SET);
+	return (off_t)-1;
+    }
+    key->file_pos = result;
+    return result;
+}
+
+static void
+action_seek64 (Unit *unit, dpacket packet)
+{
+    Key *key = lookup_key (unit, GET_PCK_ARG1 (packet));
+    uaecptr position_ptr = (uaecptr)GET_PCK64_ARG2 (packet);
+    uaecptr old_position_ptr = (uaecptr)GET_PCK_ARG4 (packet);
+    off_t old_position, result;
+
+    if (key == 0) {
+	put_pck64_res1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_INVALID_LOCK);
+	return;
+    }
+    result = seek_key64 (key, get_quad (position_ptr), GET_PCK_ARG3 (packet), &old_position);
+    if (result == (off_t)-1) {
+	put_pck64_res1 (packet, DOS_FALSE);
+	PUT_PCK_RES2 (packet, ERROR_SEEK_ERROR);
+	return;
+    }
+    put_quad (old_position_ptr, old_position);
+    put_pck64_res1 (packet, DOS_TRUE);
+}
+
+static void
+action_change_file_position64 (Unit *unit, dpacket packet)
+{
+    Key *key = lookup_key (unit, GET_PCK64_ARG1 (packet));
+    off_t old_position, result;
+
+    if (key == 0) {
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_INVALID_LOCK);
+	return;
+    }
+    result = seek_key64 (key, GET_PCK64_ARG2 (packet), GET_PCK64_ARG3 (packet), &old_position);
+    if (result == (off_t)-1) {
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_SEEK_ERROR);
+	return;
+    }
+    put_pck64_res1 (packet, old_position);
+}
+
+static void
+action_get_file_size64 (Unit *unit, dpacket packet)
+{
+    Key *key = lookup_key (unit, GET_PCK64_ARG1 (packet));
+    off_t old_position, file_size;
+
+    if (key == 0) {
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_INVALID_LOCK);
+	return;
+    }
+    old_position = lseek (key->fd, 0, SEEK_CUR);
+    if (old_position == (off_t)-1) {
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_SEEK_ERROR);
+	return;
+    }
+    file_size = lseek (key->fd, 0, SEEK_END);
+    if (file_size == (off_t)-1) {
+	lseek (key->fd, old_position, SEEK_SET);
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_SEEK_ERROR);
+	return;
+    }
+    if (lseek (key->fd, old_position, SEEK_SET) == (off_t)-1) {
+	put_pck64_res1 (packet, -1);
+	PUT_PCK_RES2 (packet, ERROR_SEEK_ERROR);
+	return;
+    }
+    put_pck64_res1 (packet, file_size);
 }
 
 static void do_find (Unit *unit, dpacket packet, int mode, int create, int fallback)
@@ -3552,6 +4083,9 @@ static int handle_packet (Unit *unit, dpacket pck)
      case ACTION_READ: action_read (unit, pck); break;
      case ACTION_WRITE: action_write (unit, pck); break;
      case ACTION_SEEK: action_seek (unit, pck); break;
+     case ACTION_SEEK64: action_seek64 (unit, pck); break;
+     case ACTION_CHANGE_FILE_POSITION64: action_change_file_position64 (unit, pck); break;
+     case ACTION_GET_FILE_SIZE64: action_get_file_size64 (unit, pck); break;
      case ACTION_SET_PROTECT: action_set_protect (unit, pck); break;
      case ACTION_SET_COMMENT: action_set_comment (unit, pck); break;
      case ACTION_SAME_LOCK: action_same_lock (unit, pck); break;
@@ -3574,13 +4108,18 @@ static int handle_packet (Unit *unit, dpacket pck)
      case ACTION_PARENT_FH: action_parent_fh (unit, pck); break;
      case ACTION_ADD_NOTIFY: action_add_notify (unit, pck); break;
      case ACTION_REMOVE_NOTIFY: action_remove_notify (unit, pck); break;
+     case ACTION_INHIBIT: action_inhibit (unit, pck); break;
+     case ACTION_EXAMINE_ALL:
+	if (!action_examine_all (unit, pck))
+	    return 0;
+	break;
+     case ACTION_EXAMINE_ALL_END: action_examine_all_end (unit, pck); break;
+     case ACTION_MAKE_LINK: action_make_link (unit, pck); break;
+     case ACTION_READ_LINK: action_read_link (unit, pck); break;
 
      /* unsupported packets */
      case ACTION_LOCK_RECORD:
      case ACTION_FREE_RECORD:
-     case ACTION_EXAMINE_ALL:
-     case ACTION_MAKE_LINK:
-     case ACTION_READ_LINK:
      case ACTION_FORMAT:
 	 return 0;
      default:
