@@ -556,8 +556,12 @@ struct hardfiledata *get_hardfile_data (int nr)
 #define ACTION_END		1007
 #define ACTION_SEEK		1008
 #define ACTION_IS_FILESYSTEM	1027
+#ifndef ACTION_READ
 #define ACTION_READ		'R'
+#endif
+#ifndef ACTION_WRITE
 #define ACTION_WRITE		'W'
+#endif
 #define ACTION_SEEK64		26400
 
 /* 2.0+ packet types */
@@ -1264,9 +1268,17 @@ static a_inode *lookup_child_aino_for_exnext (Unit *unit, a_inode *base, char *r
     while (c != 0) {
 	int l1 = strlen (c->nname);
 	/* Note: using strcmp here.  */
-	if (l0 <= l1 && strcmp (rel, c->nname + l1 - l0) == 0
-	    && (l0 == l1 || c->nname[l1-l0-1] == FSDB_DIR_SEPARATOR))
-	    break;
+	if (l0 <= l1 && strcmp (rel, c->nname + l1 - l0) == 0) {
+	    int prefix_len = l1 - l0;
+	    if (l0 == l1 || c->nname[prefix_len-1] == FSDB_DIR_SEPARATOR
+#ifdef TARGET_AMIGAOS
+		|| (prefix_len == strlen (base->nname)
+		    && base->nname[prefix_len-1] == ':'
+		    && strncmp (c->nname, base->nname, prefix_len) == 0)
+#endif
+		)
+		break;
+	}
 	c = c->sibling;
     }
     if (c != 0)
@@ -2564,6 +2576,8 @@ static ssize_t host_read_link (const char *path, char *buffer, size_t size)
     return readlink (path, buffer, size);
 #endif
 }
+
+static void updatedirtime (a_inode *a1, int now);
 
 static void
 action_make_link (Unit *unit, dpacket packet)
