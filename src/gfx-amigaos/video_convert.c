@@ -322,7 +322,7 @@ void init_lookup_16bit_swap( void )
 
 	for (rgb=0; rgb<0x10000;rgb++)
 	{
-		vpal[rgb] = ((rgb & 0xFF00) >> 8)  | ((rgb & 0xFF) << 8);
+		vpal16[rgb] = ((rgb & 0xFF00) >> 8)  | ((rgb & 0xFF) << 8);
 	}
 }
 
@@ -538,6 +538,64 @@ void convert_32bit_to_8bit_grayscale(  unsigned char *from, unsigned char *to,in
 		sum += *from++;
 		sum += *from++;
 		*to++= sum / 3;
+	}
+}
+
+/*
+ * 15-bit output (R5G5B5), for host screens in PIXF_R5G5B5PC (little endian)
+ * or PIXF_R5G5B5 (big endian). The lookups fill vpal16 for
+ * convert_16bit_lookup_to_16bit(); a 16-bit pixel is indexed as the
+ * native (big endian) word read from the source.
+ */
+
+static inline uint16 swap16( unsigned int v )
+{
+	return (uint16) (((v & 0xFF00) >> 8) | ((v & 0xFF) << 8));
+}
+
+static void init_lookup_16bit_to_15bit( int src_le, int dst_le )
+{
+	unsigned int n, v, rgb;
+
+	if (vpal16) FreeVec(vpal16);
+	vpal16 = (uint16 *) AllocVecTagList(0x10000 * sizeof(uint16), tags_public);
+	if (vpal16 == NULL) return;
+
+	for (n=0; n<0x10000; n++)
+	{
+		v = src_le ? swap16(n) : n;		// R5G6B5 as a big endian word
+		rgb = ((v >> 1) & 0x7FE0) | (v & 0x1F);	// drop the lowest green bit
+		vpal16[n] = dst_le ? swap16(rgb) : (uint16) rgb;
+	}
+}
+
+void init_lookup_16bit_be_to_15bit_le( void ) { init_lookup_16bit_to_15bit(0, 1); }
+void init_lookup_16bit_be_to_15bit_be( void ) { init_lookup_16bit_to_15bit(0, 0); }
+void init_lookup_16bit_le_to_15bit_le( void ) { init_lookup_16bit_to_15bit(1, 1); }
+void init_lookup_16bit_le_to_15bit_be( void ) { init_lookup_16bit_to_15bit(1, 0); }
+
+void convert_32bit_to_15bit_le( uint32 *from, uint16 *to, int pixels )
+{
+	int n;
+	register unsigned int rgb;
+
+	for (n=0; n<pixels; n++)
+	{
+		rgb = from[n];
+		rgb = ((rgb & 0xF80000) >> 9) | ((rgb & 0x00F800) >> 6) | ((rgb & 0x0000F8) >> 3);
+		to[n] = swap16(rgb);
+	}
+}
+
+void convert_32bit_to_15bit_be( uint32 *from, uint16 *to, int pixels )
+{
+	int n;
+	register unsigned int rgb;
+
+	for (n=0; n<pixels; n++)
+	{
+		rgb = from[n];
+		to[n] = (uint16) (((rgb & 0xF80000) >> 9) | ((rgb & 0x00F800) >> 6) | ((rgb & 0x0000F8) >> 3));
 	}
 }
 

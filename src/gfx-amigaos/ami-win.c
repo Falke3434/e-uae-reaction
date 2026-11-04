@@ -194,10 +194,14 @@ void set_p96_output_CLUT( void );
 void set_p96_output_R5G6B5( void );
 void set_p96_output_R5G6B5PC( void );
 void set_p96_output_A8R8G8B8( void );
+void set_p96_output_R5G5B5PC( void );
+void set_p96_output_R5G5B5( void );
 
  bool alloc_p96_draw_bitmap( struct BitMap *dest_bm, int w, int h, int depth );
 
  void set_vpal_8bit_to_16bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num);
+ void set_vpal_8bit_to_15bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num);
+ void set_vpal_8bit_to_15bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num);
  void set_vpal_8bit_to_16bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num);
 
  void set_vpal_8bit_to_32bit_be(struct MyCLUTEntry *pal, uint32 num1);
@@ -1894,7 +1898,9 @@ const char *rgb_format_to_name( ULONG rgbformat )
 	switch ( rgbformat )
 	{
 		case PIXF_CLUT:	return "PIX_CLUT";
-		case PIXF_R5G5B5:	return "PIXF_R5G6B5PC";
+		case PIXF_R5G5B5:	return "PIXF_R5G5B5";
+		case PIXF_R5G5B5PC:	return "PIXF_R5G5B5PC";
+		case PIXF_B8G8R8A8:	return "PIXF_B8G8R8A8";
 		case PIXF_R5G6B5:	return "PIXF_R5G6B5";	
 		case PIXF_R5G6B5PC:	return "PIXF_R5G6B5PC";	
 		case PIXF_A8R8G8B8:	return "PIXF_A8R8G8B8";	
@@ -2026,6 +2032,73 @@ void set_p96_output_R5G6B5PC()
 				p96_conv_fn = (conv_fn_cast) convert_32bit_to_16bit_le;
 				break;
 	}
+}
+
+/* 15-bit host screens. setup_customscreen() prefers depth 15, so on a
+ * graphics card that offers 15-bit modes the window is PIXF_R5G5B5PC (or
+ * PIXF_R5G5B5); without a conversion the Picasso96 buffer was shown raw. */
+
+static void set_p96_output_15bit( int le )
+{
+	p96_output_bpr = picasso_vidinfo.width * 2;
+
+	switch ( picasso_vidinfo.rgbformat )
+	{
+		case PIXF_CLUT:	DRAW_FMT_SRC = PIXF_CLUT;
+
+				if (vpal16) FreeVec(vpal16);
+				vpal16 = (uint16 *) AllocVecTagList ( 2 * 256 , tags_public  );	// 1 input pixel, 256 colors, 1 x 16bit output pixel.
+
+				if (vpal32) FreeVec(vpal32);
+				vpal32 = (uint32 *) AllocVecTagList ( 4 * 256 * 256 , tags_public  );	// 2 input pixels, 2 x 16bit output pixels.
+
+				set_palette_fn = palette_notify;
+				set_palette_on_vbl_fn = le ? set_vpal_8bit_to_15bit_le_2pixels : set_vpal_8bit_to_15bit_be_2pixels;
+				p96_conv_fn = (conv_fn_cast) convert_8bit_lookup_to_16bit_2pixels;
+				break;
+
+		case PIXF_R5G5B5:	DRAW_FMT_SRC = PIXF_R5G5B5;
+				if (le)
+				{
+					init_lookup_16bit_swap();
+					p96_conv_fn = (conv_fn_cast) convert_16bit_lookup_to_16bit;
+				}
+				else p96_conv_fn = NULL;
+				break;
+
+		case PIXF_R5G5B5PC:	DRAW_FMT_SRC = PIXF_R5G5B5PC;
+				if (le) p96_conv_fn = NULL;
+				else
+				{
+					init_lookup_16bit_swap();
+					p96_conv_fn = (conv_fn_cast) convert_16bit_lookup_to_16bit;
+				}
+				break;
+
+		case PIXF_R5G6B5:	DRAW_FMT_SRC = PIXF_R5G6B5;
+				if (le) init_lookup_16bit_be_to_15bit_le(); else init_lookup_16bit_be_to_15bit_be();
+				p96_conv_fn = (conv_fn_cast) convert_16bit_lookup_to_16bit;
+				break;
+
+		case PIXF_R5G6B5PC:	DRAW_FMT_SRC = PIXF_R5G6B5PC;
+				if (le) init_lookup_16bit_le_to_15bit_le(); else init_lookup_16bit_le_to_15bit_be();
+				p96_conv_fn = (conv_fn_cast) convert_16bit_lookup_to_16bit;
+				break;
+
+		case PIXF_A8R8G8B8:	DRAW_FMT_SRC = PIXF_A8R8G8B8;
+				p96_conv_fn = le ? (conv_fn_cast) convert_32bit_to_15bit_le : (conv_fn_cast) convert_32bit_to_15bit_be;
+				break;
+	}
+}
+
+void set_p96_output_R5G5B5PC()
+{
+	set_p96_output_15bit( 1 );
+}
+
+void set_p96_output_R5G5B5()
+{
+	set_p96_output_15bit( 0 );
 }
 
 
@@ -2210,6 +2283,8 @@ void init_comp( struct Window *W )
 				case PIXF_CLUT: set_p96_output_CLUT(); break;
 				case PIXF_R5G6B5PC: set_p96_output_R5G6B5PC(); break;
 				case PIXF_R5G6B5: set_p96_output_R5G6B5(); break;
+				case PIXF_R5G5B5PC: set_p96_output_R5G5B5PC(); break;
+				case PIXF_R5G5B5: set_p96_output_R5G5B5(); break;
 				case PIXF_B8G8R8A8:set_p96_output_B8G8R8A8(); break;
 				case PIXF_A8R8G8B8: set_p96_output_A8R8G8B8(); break;
 			}

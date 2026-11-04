@@ -33,6 +33,8 @@ void set_vpal_8bit_to_16bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num1);
 void set_vpal_8bit_to_16bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num1);
 void set_vpal_8bit_to_32bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num1);
 void set_vpal_8bit_to_32bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num1);
+void set_vpal_8bit_to_15bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num);
+void set_vpal_8bit_to_15bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num);
 
 #define _LE_ARGB(n) 0xFF + (pal[n].Red << 8) +  (pal[n].Green << 16) + (pal[n].Blue << 24) 
 #define _BE_ARGB(n) 0xFF000000 + (pal[n].Red << 16) +  (pal[n].Green << 8) + pal[n].Blue   
@@ -99,6 +101,42 @@ void set_vpal_8bit_to_16bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num1)
 		num1 = (index >> 8) & 255;
 		vpal32[index] =  (((uint32) vpal16[num1]) << 16) |  ((uint32) vpal16[num2])  ;
 	}
+}
+
+static inline uint16 __pal_to_15bit(struct MyCLUTEntry *pal, int num)
+{
+	pal += num;
+	return (uint16) (((pal -> Red & 0xF8) << 7) | ((pal -> Green & 0xF8) << 2) | ((pal -> Blue & 0xF8) >> 3));
+}
+
+static void set_vpal_8bit_to_15bit_2pixels(struct MyCLUTEntry *pal, int le)
+{
+	int index;
+	int num1, num2;
+	register unsigned int rgb;
+
+	for (index=0;index<0x100;index++)
+	{
+		rgb = __pal_to_15bit(pal, index);
+		vpal16[index] = le ? (uint16) ((rgb >> 8) | ((rgb & 0xFF) << 8)) : (uint16) rgb;
+	}
+
+	for (index=0;index<0x10000;index++)
+	{
+		num1 = (index >> 8) & 255;
+		num2 = index & 255;
+		vpal32[index] = (((uint32) vpal16[num1]) << 16) | ((uint32) vpal16[num2]);
+	}
+}
+
+void set_vpal_8bit_to_15bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num)
+{
+	set_vpal_8bit_to_15bit_2pixels(pal, 1);
+}
+
+void set_vpal_8bit_to_15bit_be_2pixels(struct MyCLUTEntry *pal, uint32 num)
+{
+	set_vpal_8bit_to_15bit_2pixels(pal, 0);
 }
 
 void set_vpal_8bit_to_32bit_le_2pixels(struct MyCLUTEntry *pal, uint32 num1)
