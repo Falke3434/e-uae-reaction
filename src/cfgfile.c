@@ -61,6 +61,7 @@ static const struct cfg_lines opttable[] =
 #endif
     {"cpu_speed", "can be max, real, or a number between 1 and 20" },
     {"cpu_type", "Can be 68000, 68010, 68020, 68020/68881" },
+    {"fpu_model", "FPU of a 68020/68881: 68881 or 68882" },
     {"cpu_compatible", "yes enables compatibility-mode" },
     {"cpu_24bit_addressing", "must be set to 'no' in order for Z3mem or P96mem to work" },
     {"log_illegal_mem", "print illegal memory access by Amiga software?" },
@@ -586,6 +587,8 @@ void save_options (FILE *f, const struct uae_prefs *p, int type)
 	cfgfile_write (f, "cpu_speed=%s\n", p->m68k_speed == -1 ? "max" : "real");
 
     cfgfile_write (f, "cpu_type=%s\n", cpumode[p->cpu_level * 2 + !p->address_space_24]);
+    if (p->cpu_level == 3)
+	cfgfile_write (f, "fpu_model=%d\n", p->fpu_model == 68882 ? 68882 : 68881);
     cfgfile_write (f, "cpu_compatible=%s\n", p->cpu_compatible ? "true" : "false");
     cfgfile_write (f, "cpu_cycle_exact=%s\n", p->cpu_cycle_exact ? "true" : "false");
     cfgfile_write (f, "blitter_cycle_exact=%s\n", p->blitter_cycle_exact ? "true" : "false");
@@ -1277,6 +1280,13 @@ static int cfgfile_parse_hardware (struct uae_prefs *p, char *option, char *valu
     if (cfgfile_strval (option, value, "cpu_type", &p->cpu_level, cpumode, 0)) {
 	p->address_space_24 = p->cpu_level < 8 && !(p->cpu_level & 1);
 	p->cpu_level >>= 1;
+	return 1;
+    }
+    /* v19 (TODO 6.7): FPU of the 68020 (cpu_type 68020/68881), WinUAE key.
+     * 68040/68060 (internal FPU) and 0 are accepted and change nothing. */
+    if (cfgfile_intval (option, value, "fpu_model", &tmpval, 1)) {
+	if (tmpval == 68881 || tmpval == 68882)
+	    p->fpu_model = tmpval;
 	return 1;
     }
     if (p->config_version < (21 << 16)) {
@@ -2561,6 +2571,7 @@ void default_prefs (struct uae_prefs *p, int type)
     strcpy (p->sername, DEFSERNAME);
 
     p->cpu_level = 0;
+    p->fpu_model = 68881;
     p->m68k_speed = 0;
     p->cpu_compatible = 1;
     p->address_space_24 = 1;

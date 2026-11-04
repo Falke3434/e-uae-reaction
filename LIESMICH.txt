@@ -1,5 +1,5 @@
 ReAction-GUI fuer E-UAE (AmigaOS 4.1)
-E-UAE 2.0.0 mit ReAction-GUI 1.0 (interner Stand v18)
+E-UAE 2.0.0 mit ReAction-GUI 1.0 (interner Stand v19)
 
 Den Inhalt dieses Ordners ueber den E-UAE-Quellbaum kopieren (Dateien ersetzen):
   configure, configure.in, src/Makefile.in, src/Makefile.am  (angepasst)
@@ -41,6 +41,8 @@ akiko.c (CD32) kommt erst damit in die Makefiles (-DCD32), und viele
 Header (options.h, memory.h, akiko.h, cdimage.h) haben sich geaendert.
 Von v17 auf v18 "make clean": JIT-Header und struct regstruct haben sich
 geaendert, gencpu/gencomp muessen neu laufen (cpuemu_*.c, compstbl.c).
+Von v18 auf v19 "make clean": options.h (struct uae_prefs) und newcpu.h
+haben sich geaendert.
 
 Grafikkarte (Picasso96 / RTG) ab v16:
   - Die Karte uaegfx.card ist in E-UAE eingebaut. Auf der Amiga-Seite
@@ -126,6 +128,14 @@ Ton: laeuft die Emulation langsamer als in Echtzeit (fps unter 50 in der
 Statuszeile, z. B. MP3 mit einem FPU-Decoder ohne JIT), wird der Ton
 langsam und knackt. Ab v18 uebersetzt der JIT auch FPU-Befehle (nicht auf
 dem A1222).
+
+FPU ab v19: Auf der Seite "Hardware" unter dem CPU-Typ "FPU" 68881 oder
+68882 (fuer 68020 + FPU; Konfiguration fpu_model=). Das FPSR meldet die
+Exception-Bits (z. B. OPERR fuer sqrt(-9)), eingeschaltete FPU-Exceptions
+werden beim 68881/68882 ausgeloest. NaN und Unendlich gehen beim Speichern
+mit FMOVE.X/FMOVEM.X nicht mehr verloren (sqrt(-9) ergab 0.5). Behebt
+ausserdem einen Absturz des JIT auf dem X5000 bei FPU-Befehlen mit
+Direktwert.
 
 Screenshots ab v18: Strg+Alt+P speichert das Bild der Emulation (Chipsatz
 oder Grafikkarte, ohne Fensterrahmen) als PNG, E-UAE_0001.png ... im

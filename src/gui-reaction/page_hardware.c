@@ -1,7 +1,7 @@
 /*
  * E-UAE - ReAction GUI: Seite "Hardware"
  *
- *   - CPU (Typ, Geschwindigkeit, kompatibel / zyklengenau, Idle)
+ *   - CPU (Typ, v19: FPU 68881/68882, Geschwindigkeit, kompatibel / zyklengenau, Idle)
  *   - Chipsatz (OCS/ECS/AGA, NTSC, Kollision, Blitter, v17: CD32-Akiko)
  *   - Speicher (Chip, Slow, Fast, Zorro III, Grafikkarte)
  *   - JIT-Compiler (nur wenn E-UAE mit JIT gebaut wurde)
@@ -20,14 +20,15 @@ enum {
     GID_JITCACHE, GID_JITHARD, GID_JITCONST,
     GID_MODEL, GID_AKIKO,
     GID_JITTRUST, GID_JITOPTIM,         /* v18 */
-    GID_JITCHAIN, GID_JITCOND, GID_JITFIXREGS, GID_JITFPU   /* v18: TODO 7.1, 7.5, 7.4, 7.3 */
+    GID_JITCHAIN, GID_JITCOND, GID_JITFIXREGS, GID_JITFPU,  /* v18: TODO 7.1, 7.5, 7.4, 7.3 */
+    GID_FPU                             /* v19: TODO 6.7 */
 };
 
 /* ---- Auswahllisten ---------------------------------------------------- */
 
 static const char *const cpu_names[] = {
     "68000", "68010", "68EC020 (24 Bit)", "68020 (32 Bit)",
-    "68EC020 + 68881 FPU (24 Bit)", "68020 + 68881 FPU (32 Bit)",
+    "68EC020 + FPU (24 Bit)", "68020 + FPU (32 Bit)",
     "68040", "68060", NULL };
 /* Wert = cpu_level * 2 + (32-Bit ? 1 : 0) = Index in der cpu_type-Tabelle
  * (cpumode[] in cfgfile.c): 4 = 68ec020, 5 = 68020, 6 = 68ec020/68881,
@@ -51,6 +52,12 @@ static LONG cpu_value_from_prefs (void)
 	return level >= 6 ? 13 : 9;                /* 68040, 68060: 32 Bit */
     return level * 2 + (changed_prefs.address_space_24 ? 0 : 1);
 }
+
+/* v19 (TODO 6.7): FPU des 68020 (fpu_model); 68040/68060 haben ihre FPU
+ * eingebaut, dort ist die Auswahl gesperrt */
+static const char *const fpu_names[] = { "68881", "68882", NULL };
+static const LONG fpu_values[] = { 68881, 68882 };
+RA_CHOICE (c_fpu, fpu_names, fpu_values);
 
 static const char *const speed_names[] = { "Maximum", "Original (Amiga speed)", NULL };
 static const LONG speed_values[] = { -1, 0 };
@@ -137,13 +144,13 @@ static const struct ra_model models[] = {
 
 static struct ra_choice *const all_choices[] = {
     &c_cpu, &c_speed, &c_chipset, &c_coll, &c_chip, &c_slow, &c_fast, &c_z3, &c_gfx,
-    &c_jit, &c_jittrust, &c_model
+    &c_jit, &c_jittrust, &c_model, &c_fpu
 };
 #define NUM_CHOICES (int)(sizeof all_choices / sizeof all_choices[0])
 
 /* ---- Gadgets ---------------------------------------------------------- */
 
-static Object *g_cpu, *g_speed, *g_compat, *g_cycle, *g_idle;
+static Object *g_cpu, *g_fpu, *g_speed, *g_compat, *g_cycle, *g_idle;
 static Object *g_chipset, *g_ntsc, *g_coll, *g_imm, *g_blitcycle, *g_akiko;
 static Object *g_chip, *g_slow, *g_fast, *g_z3, *g_gfx;
 static Object *g_model;
@@ -168,6 +175,7 @@ static Object *create (void)
 	    LAYOUT_AddChild, VLayoutObject,
 		LAYOUT_BevelStyle, BVS_GROUP, LAYOUT_Label, ra_tr ("CPU"), LAYOUT_SpaceOuter, TRUE,
 		LAYOUT_AddChild, g_cpu   = ra_choice_gadget (GID_CPU, &c_cpu), CHILD_MinWidth, ra_names_width (c_cpu.names),   CHILD_Label, ra_label ("Type:"),
+		LAYOUT_AddChild, g_fpu   = ra_choice_gadget (GID_FPU, &c_fpu), CHILD_MinWidth, ra_names_width (c_fpu.names),   CHILD_Label, ra_label ("FPU:"),
 		LAYOUT_AddChild, g_speed = ra_choice_gadget (GID_SPEED, &c_speed), CHILD_MinWidth, ra_names_width (c_speed.names), CHILD_Label, ra_label ("Speed:"),
 		LAYOUT_AddChild, g_idle  = ra_integer (GID_IDLE, 0, 120, 0),   CHILD_Label, ra_label ("Idle (0-120):"),
 		LAYOUT_AddChild, g_compat = ra_checkbox (GID_COMPAT, "Compatible CPU mode"),
@@ -258,6 +266,7 @@ static void read_prefs (void)
 
     changed_prefs.cpu_level        = cpu >> 1;
     changed_prefs.address_space_24 = (cpu < 8 && !(cpu & 1)) ? 1 : 0;   /* wie cfgfile.c */
+    changed_prefs.fpu_model        = ra_choice_value (g_fpu, &c_fpu);
     changed_prefs.m68k_speed       = ra_choice_value (g_speed, &c_speed);
     changed_prefs.cpu_idle         = ra_get_num (g_idle, INTEGER_Number);
     changed_prefs.cpu_compatible   = is_checked (g_compat);
@@ -319,6 +328,7 @@ static void write_prefs (void)
 {
     ra_choice_set (g_model, &c_model, model_from_prefs (), 0);
     ra_choice_set (g_cpu,   &c_cpu,   cpu_value_from_prefs (), 3);
+    ra_choice_set (g_fpu,   &c_fpu,   changed_prefs.fpu_model, 0);
     ra_choice_set (g_speed, &c_speed, changed_prefs.m68k_speed < 0 ? -1 : 0, 1);
     RA_SET (g_idle,   INTEGER_Number, changed_prefs.cpu_idle);
     RA_SET (g_compat, GA_Selected,    changed_prefs.cpu_compatible ? TRUE : FALSE);
@@ -360,6 +370,8 @@ static void apply_rules (void)
 
     ra_set_disabled (g_z3,  !stopped || !cpu32);
     ra_set_disabled (g_gfx, !stopped || !cpu32);
+    /* v19: FPU-Auswahl nur fuer 68020 + FPU (cpu_level 3) */
+    ra_set_disabled (g_fpu, !stopped || changed_prefs.cpu_level != 3);
     if (!cpu32) {
 	changed_prefs.z3fastmem_size = 0;
 	changed_prefs.gfxmem_size    = 0;
@@ -503,7 +515,8 @@ static void cleanup (void)
 /* Tooltips (mouse-over help). English text = key in Catalogs/E-UAE.cd. */
 static const struct ra_hint hints[] = {
     { GID_MODEL, 1, "Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page." },
-    { GID_CPU, 1, "Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing." },
+    { GID_CPU, 1, "Processor to emulate. 68020 + FPU adds a floating point unit (68881 or 68882, see FPU), 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing." },
+    { GID_FPU, 1, "Floating point unit of the 68020: 68881 or 68882. Programs and the system tell them apart by the FSAVE frame; some programs need a 68882. 68040 and 68060 have their FPU built in." },
     { GID_SPEED, 1, "Maximum runs as fast as the host allows. Original keeps the speed of a real Amiga." },
     { GID_IDLE, 1, "Gives CPU time back to the system while the Amiga is idle. 0 = off; otherwise E-UAE sleeps 1 ms after every n raster lines in which the Amiga waits, so smaller values save more (e.g. 30-60). Only works with CPU speed Maximum." },
     { GID_COMPAT, 1, "More compatible, but slower CPU emulation. Needed by some games. Not available while the JIT compiler is on." },

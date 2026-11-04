@@ -235,6 +235,7 @@ static void update_68k_cycles (void)
 
 void check_prefs_changed_cpu (void)
 {
+    currprefs.fpu_model = changed_prefs.fpu_model;	/* v19: FSAVE frame size only */
     if (currprefs.cpu_level != changed_prefs.cpu_level
 	|| currprefs.cpu_compatible != changed_prefs.cpu_compatible
 	|| currprefs.cpu_cycle_exact != changed_prefs.cpu_cycle_exact) {
@@ -1555,8 +1556,7 @@ void m68k_reset (void)
     regs.intmask = 7;
     regs.vbr = regs.sfc = regs.dfc = 0;
 #ifdef FPUEMU
-    regs.fpcr = regs.fpsr = regs.fpiar = 0;
-    regs.fp_result=1;
+    fpp_reset ();	/* v19: FPCR/FPSR/FPIAR 0, registers NaN, JIT FPU mode */
     regs.irc = 0xffff;
 #endif
     fill_prefetch_slow (&regs);

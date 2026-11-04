@@ -1,7 +1,7 @@
 ; Deutsche Uebersetzung (E-UAE ReAction GUI). Zeichensatz: ISO-8859-1 (Latin-1).
 ; Platzhalter (%s, %d) und \n muessen unveraendert bleiben.
 ;
-## version $VER: E-UAE.catalog 1.4 (24.10.2026)
+## version $VER: E-UAE.catalog 1.5 (28.10.2026)
 ## codeset 0
 ## language deutsch
 ;
@@ -738,8 +738,8 @@ Vorgaben fuer gaengige Amiga-Modelle. Stellt CPU, Chipsatz und Speicher ein; ROM
 ; Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page.
 ;
 MSG_HINT_HARDWARE_CPU
-Zu emulierender Prozessor. 68020 + 68881 erg\xE4nzt eine Flie\xDFkommaeinheit (FPU), 68040 und 68060 haben immer eine. Der JIT-Compiler braucht einen 68020 oder h\xF6her mit 32-Bit-Adressierung.
-; Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
+Zu emulierender Prozessor. 68020 + FPU erg\xE4nzt eine Flie\xDFkommaeinheit (68881 oder 68882, siehe FPU), 68040 und 68060 haben immer eine. Der JIT-Compiler braucht einen 68020 oder h\xF6her mit 32-Bit-Adressierung.
+; Processor to emulate. 68020 + FPU adds a floating point unit (68881 or 68882, see FPU), 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
 ;
 MSG_HINT_HARDWARE_SPEED
 Maximal laeuft so schnell wie der Host erlaubt. Original haelt die Geschwindigkeit eines echten Amiga.
@@ -2100,4 +2100,8 @@ Magic Mouse: Amiga-Zeiger folgt dem Workbench-Zeiger
 MSG_SET_524
 Der Amiga-Mauszeiger folgt dem Workbench-Zeiger, ohne die Maus einzufangen: der Zeiger kann das Fenster jederzeit verlassen. Wirkt im Fenster mit einem Bildschirm der Grafikkarte (RTG) und dem Hardware-Mauszeiger; auf Chipsatz-Bildschirmen und im Vollbild arbeitet die Maus wie bisher.
 ; The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before.
+;
+MSG_SET_525
+Flie\xDFkommaeinheit des 68020: 68881 oder 68882. Programme und das System unterscheiden sie am FSAVE-Rahmen; manche Programme brauchen einen 68882. 68040 und 68060 haben ihre FPU eingebaut.
+; Floating point unit of the 68020: 68881 or 68882. Programs and the system tell them apart by the FSAVE frame; some programs need a 68882. 68040 and 68060 have their FPU built in.
 ;

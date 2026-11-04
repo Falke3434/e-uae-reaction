@@ -1,7 +1,7 @@
 # E-UAE ReAction
 
 Amiga emulator for **AmigaOS 4.1 (PPC)** with a native **ReAction GUI**.
-E-UAE 2.0.0 / ReAction GUI 1.0 (internal build number: v17, see [CHANGELOG.md](CHANGELOG.md)).
+E-UAE 2.0.0 / ReAction GUI 1.0 (internal build number: v19, see [CHANGELOG.md](CHANGELOG.md)).
 
 This is a fork of [khval/e-uae-1-0-0](https://github.com/khval/e-uae-1-0-0)
 (branch `uae-1-1-2`, E-UAE PowerPC JIT project v1.1.2, based on E-UAE 0.8.29-WIP).

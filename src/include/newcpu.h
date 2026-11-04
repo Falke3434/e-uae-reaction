@@ -333,10 +333,15 @@ extern void fbcc_opp     (uae_u32, struct regstruct *regs, uaecptr, uae_u32);
 extern void fsave_opp    (uae_u32, struct regstruct *regs);
 extern void frestore_opp (uae_u32, struct regstruct *regs);
 extern uae_u32 fpp_get_fpsr (const struct regstruct *regs);
+#ifdef FPUEMU
+/* v19 (TODO 6.7): FPU reset state; JIT translates no FPU instructions */
+extern void fpp_reset (void);
+extern int fpp_jit_strict;
+#endif
 #if defined(JIT) && defined(FPUEMU)
 /* v18 (TODO 7.3): called by translated FPU instructions (fpp.c) */
 extern void fpp_jit_arith (uae_u32 extra, fptype src);
-extern uae_u32 fpp_jit_toint (fptype src);
+extern uae_u32 fpp_jit_toint (fptype src, uae_u32 fmt);
 extern int fpp_jit_arith_valid (uae_u16 extra);
 #endif
 

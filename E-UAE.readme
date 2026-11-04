@@ -16,7 +16,7 @@ just-in-time compiler for 68020+ code (PowerPC JIT by Almos Rajnai). This
 release adds a native ReAction configuration GUI and many fixes and new
 features to the AmigaOS 4 version of E-UAE.
 
-E-UAE 2.0.0 with ReAction GUI 1.0 (internal build v18).
+E-UAE 2.0.0 with ReAction GUI 1.0 (internal build v19).
 
 It runs on all AmigaOS 4.1 PPC systems (AmigaOne X5000/X1000/A1222,
 Sam440/460, Pegasos II, Classic PPC) and under QEMU.
@@ -29,7 +29,8 @@ Highlights
    disks, input, shortcuts and configuration; tooltips; English and German
    (locale catalog)
  * PowerPC JIT compiler for 68020 - 68060 code with block chaining and
-   FPU translation, 68000 - 68060, FPU, AGA, Zorro II/III memory
+   FPU translation, 68000 - 68060, FPU (68881/68882 with exceptions),
+   AGA, Zorro II/III memory
  * Built-in Picasso96 graphics card (uaegfx.card in the boot ROM, up to
    128 MB, hardware mouse pointer, VBLANK interrupt)
  * Hard disks: directories, hardfiles (with RDB), IDE controller of the
@@ -106,6 +107,19 @@ Usage notes
 
 History
 -------
+
+v19 (E-UAE 2.0.0, ReAction GUI 1.0)
+ Core:
+  - FPU: 68881 or 68882 (Hardware page), FSAVE frames of the 68882 and
+    68060, NULL frame resets the FPU
+  - FPU exception bits in the FPSR, FPU exceptions on the 68881/68882
+    when enabled, rounding mode and single precision of the FPCR
+ Fixes:
+  - JIT crash on the X5000 with FPU instructions (alignment exception)
+  - NaN and infinity written with FMOVE.X/FMOVEM.X became numbers
+    (sqrt(-9) "was" 0.5)
+  - Conversion to integers saturates as on a real FPU; FDBcc branched
+    the wrong way; FTRAPcc; FMOVECR; FPU registers in savestates
 
 v18 (E-UAE 2.0.0, ReAction GUI 1.0)
  Core:
@@ -245,7 +259,7 @@ Credits
  PowerPC JIT           Almos Rajnai
  AmigaOS 4 updates     Kjetil Hvalstrand (LiveForIt), Fredrik Wikstrom
                        (salass00), Josef Wegner
- ReAction GUI, v1-v18  Falke_34
+ ReAction GUI, v1-v19  Falke_34
 
 E-UAE is free software under the GNU General Public License, see COPYING.
 More details: README (E-UAE PPC JIT), README_original (E-UAE 0.8.29).

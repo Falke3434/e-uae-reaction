@@ -558,7 +558,7 @@ MSG_HINT_HARDWARE_MODEL (183//)
 Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page.
 ;
 MSG_HINT_HARDWARE_CPU (184//)
-Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
+Processor to emulate. 68020 + FPU adds a floating point unit (68881 or 68882, see FPU), 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.
 ;
 MSG_HINT_HARDWARE_SPEED (185//)
 Maximum runs as fast as the host allows. Original keeps the speed of a real Amiga.
@@ -1579,4 +1579,7 @@ Magic Mouse: Amiga pointer follows the host pointer
 ;
 MSG_SET_524 (524//)
 The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before.
+;
+MSG_SET_525 (525//)
+Floating point unit of the 68020: 68881 or 68882. Programs and the system tell them apart by the FSAVE frame; some programs need a 68882. 68040 and 68060 have their FPU built in.
 ;

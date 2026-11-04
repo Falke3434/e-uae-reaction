@@ -4466,6 +4466,16 @@ STATIC_INLINE void helper_fpu_int_to_double(void)
 	comp_ppc_fpop(COMP_PPC_FSUB, 1, 1, 0);
 }
 
+/* v19 (TODO 6.7): FCMP/FTST clear the exception status byte of the FPSR
+ * (bits 15-8) as in the interpreter; the accrued exceptions and the
+ * quotient stay (the whole FPSR was set to 0) */
+STATIC_INLINE void helper_fpu_clear_exc(void)
+{
+	comp_ppc_lwz(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+	comp_ppc_rlwinm(PPCR_SPECTMP_MAPPED, PPCR_SPECTMP_MAPPED, 0, 24, 15, FALSE);
+	comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+}
+
 /* r0 = r0 or gpr sign extended from size */
 STATIC_INLINE void helper_fpu_extend(comp_ppc_reg src, int size)
 {
@@ -4568,20 +4578,18 @@ void comp_macroblock_impl_fpu(union comp_compiler_mb_union* mb)
 
 		switch (op)
 		{
-		case 0x38:	//FCMP: fp_result = (dst == src) ? 0.0 : dst - src, fpsr = 0
+		case 0x38:	//FCMP: fp_result = (dst == src) ? 0.0 : dst - src
 			comp_ppc_fpmem(COMP_PPC_LFD, 0, COMP_FPU_OFF_FP(dst));
 			comp_ppc_fpop(COMP_PPC_FCMPU, 1 << 2, 0, 1);
 			comp_ppc_fpop(COMP_PPC_FSUB, 2, 0, 1);
 			comp_ppc_emit_word(0x40860008);	//bne cr1,+8
 			comp_ppc_fpmem(COMP_PPC_LFD, 2, COMP_FPU_OFF_ZERO);
 			comp_ppc_fpmem(COMP_PPC_STFD, 2, COMP_FPU_OFF_RESULT);
-			comp_ppc_li(PPCR_SPECTMP_MAPPED, 0);
-			comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+			helper_fpu_clear_exc();
 			return;
-		case 0x3a:	//FTST: fp_result = src, fpsr = 0
+		case 0x3a:	//FTST: fp_result = src
 			comp_ppc_fpmem(COMP_PPC_STFD, 1, COMP_FPU_OFF_RESULT);
-			comp_ppc_li(PPCR_SPECTMP_MAPPED, 0);
-			comp_ppc_stw(PPCR_SPECTMP_MAPPED, COMP_FPU_OFF_FPSR, PPCR_REGS_BASE_MAPPED);
+			helper_fpu_clear_exc();
 			return;
 		case 0x00: case 0x40: case 0x44:
 			comp_ppc_fpop(COMP_PPC_FMR, 0, 0, 1);
@@ -4613,8 +4621,9 @@ void comp_macroblock_impl_fpu(union comp_compiler_mb_union* mb)
 			comp_compile_error();
 			return;
 		}
-		//Single precision rounding of FSxxx as fround() in the interpreter
-		if ((extra & 0x44) == 0x40)
+		//Single precision rounding of FSxxx (v19: and of FSGLDIV/FSGLMUL)
+		//as fp_round_single() in the interpreter
+		if ((extra & 0x44) == 0x40 || op == 0x24 || op == 0x27)
 			comp_ppc_fpop(COMP_PPC_FRSP, 0, 0, 0);
 		comp_ppc_fpmem(COMP_PPC_STFD, 0, COMP_FPU_OFF_FP(dst));
 		comp_ppc_fpmem(COMP_PPC_STFD, 0, COMP_FPU_OFF_RESULT);
@@ -4628,8 +4637,9 @@ void comp_macroblock_impl_fpu(union comp_compiler_mb_union* mb)
 		break;
 
 	case COMP_FPU_DST_INT_CALL:
-		//work area = fpp_jit_toint(FPn): the temporary registers were flushed
+		//work area = fpp_jit_toint(FPn, format): the temporary registers were flushed
 		comp_ppc_fpmem(COMP_PPC_LFD, 1, COMP_FPU_OFF_FP(n));
+		comp_ppc_li(PPCR_PARAM1_MAPPED, (uae_u16) extra);
 		comp_ppc_call(PPCR_SPECTMP_MAPPED, (uae_uintptr) fpp_jit_toint);
 		comp_ppc_stw(PPCR_PARAM1_MAPPED, COMP_FPU_OFF_TMP, PPCR_REGS_BASE_MAPPED);
 		break;

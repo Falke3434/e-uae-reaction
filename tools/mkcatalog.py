@@ -22,6 +22,22 @@
 # of this script if you prefer - the program itself only needs the
 # generated .h/.c files and the finished .catalog files.
 #
+# Import an existing binary catalog (e.g. one made with FlexCat or sent by a
+# translator) and turn it into Catalogs/<language>.ct:
+#
+#     python3 tools/mkcatalog.py --import-catalog path/to/E-UAE.catalog [language]
+#
+# The language defaults to the LANG chunk of the catalog. Every message of the
+# .cd is written to the .ct (with the English text as comment); messages that
+# are missing in the catalog are filled with the English text and listed, so
+# they can be translated afterwards. An existing .ct is never overwritten
+# (use --force).
+#
+#     python3 tools/mkcatalog.py --check
+#
+# lists, for every .ct, the messages that are missing or still identical to
+# the English text, and warns about different placeholders.
+#
 # Text escapes understood: \n \t \\ \" \xHH (hex byte).
 # .ct files are ISO-8859-1 (Latin-1), like AmigaOS itself.
 # No third-party modules needed (Python 3.6+).
@@ -241,7 +257,11 @@ def build_catalog(lang, ver, entries, trans):
 
 
 def read_catalog(data):
-    """Tiny reader used for the self-test after writing."""
+    """Reader for CTLG catalogs (also used for the self-test after writing).
+
+    Accepts both flavours of the string size field: the real length (FlexCat)
+    and the length padded to a multiple of 4 (written by this script).
+    Strings are cut at the first NUL."""
     assert data[:4] == b"FORM" and data[8:12] == b"CTLG"
     assert struct.unpack(">I", data[4:8])[0] == len(data) - 8
     pos = 12
@@ -256,12 +276,97 @@ def read_catalog(data):
             lang = body.split(b"\0")[0].decode("latin-1")
         if tag == b"STRS":
             p = 0
-            while p < len(body):
+            while p + 8 <= len(body):
                 sid, ssz = struct.unpack(">II", body[p:p + 8])
                 s = body[p + 8:p + 8 + ssz]
                 out[sid] = s.split(b"\0")[0]
-                p += 8 + ssz
+                p += 8 + ((ssz + 3) & ~3)
     return lang, out
+
+
+def read_catalog_version(data):
+    pos = 12
+    while pos < len(data):
+        tag = data[pos:pos + 4]
+        size = struct.unpack(">I", data[pos + 4:pos + 8])[0]
+        if tag == b"FVER":
+            return data[pos + 8:pos + 8 + size].split(b"\0")[0].decode("latin-1")
+        pos += 8 + size + (size % 2)
+    return None
+
+
+def escape(b):
+    """bytes -> one text line for a .ct file (inverse of unescape)."""
+    out = []
+    for ch in b:
+        if ch == 10:
+            out.append("\\n")
+        elif ch == 9:
+            out.append("\\t")
+        elif ch == 92:
+            out.append("\\\\")
+        elif ch == 34:
+            out.append('\\"')
+        elif 32 <= ch < 127:
+            out.append(chr(ch))
+        else:
+            out.append("\\x%02X" % ch)
+    return "".join(out)
+
+
+def import_catalog(catpath, lang, force):
+    hdr, entries = parse_cd(CD_FILE)
+    with open(catpath, "rb") as f:
+        data = f.read()
+    clang, strings = read_catalog(data)
+    lang = lang or clang
+    if not lang:
+        raise SystemExit("no language given and none in the catalog")
+    ver = read_catalog_version(data) or hdr.get("version", "$VER: E-UAE.catalog 1.0")
+    ctpath = os.path.join(CAT_DIR, lang + ".ct")
+    if os.path.exists(ctpath) and not force:
+        raise SystemExit("%s exists - use --force to overwrite" % ctpath)
+    ids = {e[1] for e in entries}
+    unknown = sorted(i for i in strings if i not in ids)
+    missing = []
+    with open(ctpath, "w", encoding="latin-1", newline="\n") as f:
+        f.write("; %s translation (E-UAE ReAction GUI). Charset: ISO-8859-1 (Latin-1).\n" % lang)
+        f.write("; Placeholders (%s, %d) and \\n must stay unchanged.\n;\n")
+        f.write("## version %s\n## codeset 0\n## language %s\n;\n" % (ver, lang))
+        for name, sid, default in sorted(entries, key=lambda e: e[1]):
+            text = strings.get(sid)
+            if text is None:
+                text = default           # not in the catalog: identical or untranslated
+                missing.append((sid, name))
+            f.write("%s\n%s\n; %s\n;\n" % (name, escape(text), escape(default)))
+    print("wrote %s: %d messages, %d taken from the catalog"
+          % (os.path.relpath(ctpath, ROOT), len(entries), len(entries) - len(missing)))
+    if missing:
+        print("not in the catalog (English text written - identical in the language, or still to be translated):")
+        for sid, name in missing:
+            print("  %4d %s" % (sid, name))
+    if unknown:
+        print("WARNING: IDs in the catalog but not in the .cd (dropped): %s" % unknown)
+
+
+def check_all():
+    hdr, entries = parse_cd(CD_FILE)
+    for fn in sorted(os.listdir(CAT_DIR)):
+        if not fn.endswith(".ct"):
+            continue
+        thdr, trans = parse_ct(os.path.join(CAT_DIR, fn))
+        print("%s:" % fn)
+        for name, sid, default in sorted(entries, key=lambda e: e[1]):
+            tr = trans.get(name)
+            if not tr:
+                print("  %4d %-34s MISSING" % (sid, name))
+            elif tr == default:
+                print("  %4d %-34s same as English" % (sid, name))
+            else:
+                check_placeholders(name, default, tr, fn)
+        for name in trans:
+            if name not in {e[0] for e in entries}:
+                print("  %s is not in the .cd" % name)
 
 
 def check_placeholders(name, en, tr, path):
@@ -272,6 +377,14 @@ def check_placeholders(name, en, tr, path):
 
 
 def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--check":
+        return check_all()
+    if args and args[0] == "--import-catalog":
+        rest = [a for a in args[1:] if a != "--force"]
+        if not rest:
+            raise SystemExit("usage: mkcatalog.py --import-catalog FILE.catalog [language] [--force]")
+        return import_catalog(rest[0], rest[1] if len(rest) > 1 else None, "--force" in args)
     hdr, entries = parse_cd(CD_FILE)
     write_c_files(entries, hdr)
     print("wrote src/gui-reaction/locale_ids.h, src/gui-reaction/locale_defs.c (%d messages)" % len(entries))

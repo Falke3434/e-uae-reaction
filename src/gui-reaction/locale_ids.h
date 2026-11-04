@@ -526,8 +526,9 @@
 #define MSG_SET_522                522
 #define MSG_SET_523                523
 #define MSG_SET_524                524
+#define MSG_SET_525                525
 
-#define MSG_MAX_ID                 524
+#define MSG_MAX_ID                 525
 
 /* built-in English texts, indexed by message ID (see locale_support.c) */
 extern const char * const g_MsgDefault[MSG_MAX_ID + 1];

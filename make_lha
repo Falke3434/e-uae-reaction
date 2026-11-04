@@ -30,6 +30,8 @@ copy package/#? ram:E-UAE
 makedir ram:E-UAE/Catalogs
 makedir ram:E-UAE/Catalogs/deutsch
 copy Catalogs/deutsch/E-UAE.catalog ram:E-UAE/Catalogs/deutsch
+makedir ram:E-UAE/Catalogs/italiano
+copy Catalogs/italiano/E-UAE.catalog ram:E-UAE/Catalogs/italiano
 
 makedir ram:E-UAE/accelerator.library
 copy /os31/os31-test-app/accelerator_wrappers.h ram:E-UAE/accelerator.library/proto_accelerator.h

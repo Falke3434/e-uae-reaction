@@ -129,6 +129,7 @@ struct uae_prefs {
 
     int m68k_speed;
     int cpu_level;
+    int fpu_model;		/* v19 (TODO 6.7): 68881 or 68882 (cpu_level 3) */
     int cpu_compatible;
     int address_space_24;
 

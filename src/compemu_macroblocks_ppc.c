@@ -6869,8 +6869,14 @@ BOOL comp_fpu_compilable(uae_u16 opcode, const uae_u16* location)
 		return TRUE;
 
 	if (!comp_fpu_active()) return FALSE;
-	if (h == comp_opcode_FBCOND) return (opcode & 0x20) == 0;
 	if (h == comp_opcode_FNOP) return TRUE;
+	//v19 (TODO 6.7): an FPU exception enabled on a 68881/68882 or single
+	//precision in the FPCR: all FPU instructions run in the interpreter
+	//(fpp.c, fpcr_changed() throws the translated code away)
+#ifdef FPUEMU
+	if (fpp_jit_strict) return FALSE;
+#endif
+	if (h == comp_opcode_FBCOND) return (opcode & 0x20) == 0;
 #ifndef FPUEMU
 	return FALSE;
 #else
@@ -7041,10 +7047,12 @@ STATIC_INLINE void helper_fpu_store_value(int fmt, int fpn)
 				COMP_FPU_DST_DOUBLE, fpn, 0, 0, PPCR_SPECTMP_MAPPED, 0, 0);
 	else
 	{
+		//v19: the format (0 .L, 4 .W, 6 .B) is passed to fpp_jit_toint()
+		//for the saturation to that size
 		comp_flush_temp_registers(TRUE);
 		src_reg = dest_reg = src_mem_addrreg = dest_mem_addrreg = NULL;
 		comp_macroblock_push_fpu(COMP_COMPILER_MACROBLOCK_REG_NONE, COMP_COMPILER_MACROBLOCK_REG_NONE,
-				COMP_FPU_DST_INT_CALL, fpn, 0, 0, PPCR_SPECTMP_MAPPED, 0, 0);
+				COMP_FPU_DST_INT_CALL, fpn, fmt, 0, PPCR_SPECTMP_MAPPED, 0, 0);
 	}
 }
 
@@ -7052,7 +7060,7 @@ STATIC_INLINE void helper_fpu_store_value(int fmt, int fpn)
 STATIC_INLINE void helper_fpu_immediate(int fmt, uae_u32* hi, uae_u32* lo)
 {
 #ifdef FPUEMU
-	union { double d; uae_u32 u[2]; float f; uae_u32 s; } v;
+	union { double d; uae_u32 u[2]; } v;
 	uae_u16* p = pc_ptr;
 
 	switch (fmt)
@@ -7061,10 +7069,17 @@ STATIC_INLINE void helper_fpu_immediate(int fmt, uae_u32* hi, uae_u32* lo)
 	case 4: v.d = (double) (uae_s16) p[0]; pc_ptr += 1; break;
 	case 6: v.d = (double) (uae_s8) (p[0] & 0xff); pc_ptr += 1; break;
 	case 1:
-		v.s = (((uae_u32) p[0]) << 16) | p[1];
-		v.d = (double) v.f;
+	{
+		/* v19: through a volatile variable: gcc combined the two halfword
+		 * reads and the union into one lfs from the 68k instruction
+		 * stream, which is only 2-byte aligned - an alignment exception
+		 * on the X5000 (e5500), crash in comp_opcode_FGENIMM() */
+		volatile union { float f; uae_u32 s; } sv;
+		sv.s = (((uae_u32) p[0]) << 16) | p[1];
+		v.d = (double) sv.f;
 		pc_ptr += 2;
 		break;
+	}
 	default:	//5: double
 		v.u[0] = (((uae_u32) p[0]) << 16) | p[1];
 		v.u[1] = (((uae_u32) p[2]) << 16) | p[3];

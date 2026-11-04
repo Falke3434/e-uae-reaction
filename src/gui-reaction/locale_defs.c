@@ -186,7 +186,7 @@ const char * const g_MsgDefault[MSG_MAX_ID + 1] = {
     /* MSG_HINT_MEDIA_DFEJECT   */ "Eject the disk from this drive.",
     /* MSG_HINT_MEDIA_FLOPPYSPEED */ "Floppy drive speed. Turbo loads as fast as possible, but some software needs the original speed.",
     /* MSG_HINT_HARDWARE_MODEL  */ "Presets for common Amiga models. Sets CPU, chipset and memory; ROM and drives stay unchanged. CD32 also switches on the Akiko chip with its CD drive - choose the CD32 Kickstart and extended ROM on the Media page.",
-    /* MSG_HINT_HARDWARE_CPU    */ "Processor to emulate. 68020 + 68881 adds a floating point unit, 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.",
+    /* MSG_HINT_HARDWARE_CPU    */ "Processor to emulate. 68020 + FPU adds a floating point unit (68881 or 68882, see FPU), 68040 and 68060 always have one. The JIT compiler needs a 68020 or higher with 32 bit addressing.",
     /* MSG_HINT_HARDWARE_SPEED  */ "Maximum runs as fast as the host allows. Original keeps the speed of a real Amiga.",
     /* MSG_HINT_HARDWARE_IDLE   */ "Gives CPU time back to the system while the Amiga is idle. 0 = off; otherwise E-UAE sleeps 1 ms after every n raster lines in which the Amiga waits, so smaller values save more (e.g. 30-60). Only works with CPU speed Maximum.",
     /* MSG_HINT_HARDWARE_COMPAT */ "More compatible, but slower CPU emulation. Needed by some games. Not available while the JIT compiler is on.",
@@ -527,4 +527,5 @@ const char * const g_MsgDefault[MSG_MAX_ID + 1] = {
     /* MSG_SET_522              */ "Folder for screenshots (hotkey Ctrl+Alt+P). Created when it does not exist yet.",
     /* MSG_SET_523              */ "Magic Mouse: Amiga pointer follows the host pointer",
     /* MSG_SET_524              */ "The Amiga mouse pointer follows the Workbench pointer, without capturing the mouse: the pointer can leave the window at any time. Works in a window with a graphics card (RTG) screen and the hardware mouse pointer; on chipset screens and in full screen the mouse works as before.",
+    /* MSG_SET_525              */ "Floating point unit of the 68020: 68881 or 68882. Programs and the system tell them apart by the FSAVE frame; some programs need a 68882. 68040 and 68060 have their FPU built in.",
 };
