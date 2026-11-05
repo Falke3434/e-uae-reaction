@@ -804,35 +804,23 @@ static void dummy_flush_screen (struct vidbuf_description *gfxinfo, int first_li
  */
 STATIC_INLINE void flush_line_planar_nodither (struct vidbuf_description *gfxinfo, int line_no)
 {
-	int     xs      = 0;
-	int     len     = gfxinfo->width;
-	int     yoffset = line_no * gfxinfo->rowbytes;
+	int xs = 0;
+	int len;
+	int offset = line_no * gfxinfo->rowbytes;
+	uae_u8 *src = gfxinfo->bufmem + offset;
+	uae_u8 *dst = oldpixbuf + offset;
 
-	uae_u8 *src;
-	uae_u8 *dst;
+	while (xs < gfxinfo->width && src[xs] == dst[xs])
+		xs++;
+	if (xs == gfxinfo->width)
+		return;
 
-	uae_u32 *newp = (uae_u32 *) (gfxinfo->bufmem + yoffset);
-	uae_u32 *oldp = (uae_u32 *) oldpixbuf + yoffset;
+	len = gfxinfo->width - xs;
+	while (len > 0 && src[xs + len - 1] == dst[xs + len - 1])
+		len--;
 
-	uae_u8 *src_end = newp + len;
-	uae_u8 *old_end = oldp + len;
-
-	/* Find first pixel changed on this line */
-	while ((*newp++ == *oldp++)&&(len)) len-=4;
-
-	src   = (uae_u8 *) (--newp);
-	dst   = (uae_u8 *) (--oldp);
-
-	newp = src_end;
-	oldp = old_end;
-
-	/* Find last pixel changed on this line */
-
-	while ((*--newp == *--oldp)&&(len)) len -=4;
-
-	len = 4 + ( (uae_u8 *) oldp - dst) ;
-
-	xs  = src - (uae_u8 *)(gfxinfo->bufmem + yoffset);	//  start address - first address on the line.
+	src += xs;
+	dst += xs;
 
 	/* Copy changed pixels to delta buffer */
 	CopyMem (src, dst, len);
@@ -857,36 +845,32 @@ static void flush_block_planar_nodither (struct vidbuf_description *gfxinfo, int
  */
 STATIC_INLINE void flush_line_planar_dither (struct vidbuf_description *gfxinfo, int line_no)
 {
-    int      xs      = 0;
-    int      len     = gfxinfo->width;
-    int      yoffset = line_no * gfxinfo->rowbytes;
-    uae_u16 *src;
-    uae_u16 *dst;
-    uae_u16 *newp = (uae_u16 *)(gfxinfo->bufmem + yoffset);
-    uae_u16 *oldp = (uae_u16 *)(oldpixbuf + yoffset);
+    int xs = 0;
+    int len;
+    int dither_len;
+    int offset = line_no * gfxinfo->rowbytes;
+    uae_u16 *src = (uae_u16 *)(gfxinfo->bufmem + offset);
+    uae_u16 *dst = (uae_u16 *)(oldpixbuf + offset);
 
     /* Find first pixel changed on this line */
-    while (*newp++ == *oldp++) {
-	if (!--len)
-		return; /* line not changed - so don't draw it */
-    }
-    src   = --newp;
-    dst   = --oldp;
-    newp += len;
-    oldp += len;
+    while (xs < gfxinfo->width && src[xs] == dst[xs])
+	xs++;
+    if (xs == gfxinfo->width)
+	return;
 
-    /* Find last pixel changed on this line */
-    while (*--newp == *--oldp)
-	;
+    len = gfxinfo->width - xs;
+    while (len > 0 && src[xs + len - 1] == dst[xs + len - 1])
+	len--;
 
-    len = (1 + (oldp - dst));
-    xs  = src - (uae_u16 *)(gfxinfo->bufmem + yoffset);
+    src += xs;
+    dst += xs;
 
     /* Copy changed pixels to delta buffer */
-    CopyMem (src, dst, len * 2);
+    CopyMem (src, dst, len * sizeof(*src));
 
     /* Dither changed pixels to Line buffer */
-    DitherLine (Line, src, xs, line_no, (len + 3) & ~3, 8);
+    dither_len = (len + 3) & ~3;
+    DitherLine (Line, src, xs, line_no, dither_len, 8);
 
     /* Blit dithered pixels from Line buffer to the display */
     WritePixelLine8 ( draw_aga_RP, xs + XOffset, line_no + YOffset, len, Line, TempRPort);
@@ -1603,9 +1587,13 @@ static int setup_customscreen (void)
 	/* First try to find an RTG screen that matches the requested size  */
 	{
 		unsigned int i;
-		const UBYTE preferred_depth[] = {15, 16, 32, 8}; /* Try depths in this order of preference */
+		const UBYTE chipset_depths[] = {15, 16};
+		const UBYTE rtg_depths[] = {32};
+		const UBYTE *preferred_depth = screen_is_picasso ? rtg_depths : chipset_depths;
+		unsigned int depth_count = screen_is_picasso ?
+			sizeof(rtg_depths) : sizeof(chipset_depths);
 
-		for (i = 0; i < sizeof( preferred_depth ) && mode == (ULONG) INVALID_ID; i++)
+		for (i = 0; i < depth_count && mode == (ULONG) INVALID_ID; i++)
 		{
 			Depth = preferred_depth[i];
 			mode = find_rtg_mode (&width, &height, Depth);
@@ -5422,4 +5410,3 @@ uae_u8 *restore_p96( uae_u8 * src )
 {
 	return src;
 }
-
