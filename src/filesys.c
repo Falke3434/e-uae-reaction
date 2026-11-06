@@ -2436,8 +2436,8 @@ action_examine_all (Unit *unit, dpacket packet)
 	memset (&statbuf, 0, sizeof statbuf);
 	if (type >= EXALL_ED_SIZE)
 	    stat (entry->nname, &statbuf);
-	put_long (address + 4, entry->dir ? 2 : -3);
-	put_long (address + 8, address + fixed_size);
+	put_long (address + 4, address + fixed_size);
+	put_long (address + 8, entry->dir ? 2 : -3);
 	{
 	    const char *name = entry->aname;
 	    unsigned int i;
